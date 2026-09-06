@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import HeroReadout from "../components/HeroReadout.jsx";
 import useIsMobile from "../hooks/useIsMobile.js";
@@ -197,18 +197,8 @@ function SiteHeader() {
   const isMobile = useIsMobile(900);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Lock background scroll while the full-screen mobile menu is open --
-  // without this, the page behind the overlay keeps scrolling, which
-  // looks broken.
-  useEffect(() => {
-    document.body.style.overflow = isMobile && menuOpen ? "hidden" : "";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [isMobile, menuOpen]);
-
   return (
-    <header className="site-header">
+    <header className="site-header" style={{ position: "relative" }}>
       <div
         className="container"
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
@@ -220,8 +210,9 @@ function SiteHeader() {
 
         {isMobile ? (
           <button
-            onClick={() => setMenuOpen(true)}
-            aria-label="Open menu"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
             style={{
               background: "rgba(255,255,255,0.08)",
               border: "none",
@@ -231,11 +222,11 @@ function SiteHeader() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "inherit",
+              color: "#fff",
               cursor: "pointer",
             }}
           >
-            <IconHamburger />
+            {menuOpen ? <IconClose /> : <IconHamburger />}
           </button>
         ) : (
           <nav className="site-nav">
@@ -260,62 +251,34 @@ function SiteHeader() {
       {isMobile && menuOpen && (
         <div
           style={{
-            position: "fixed",
-            inset: 0,
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
             background: "#0a0a0a",
-            zIndex: 100,
+            zIndex: 9999,
             display: "flex",
             flexDirection: "column",
-            padding: "20px 24px",
-            overflowY: "auto",
+            padding: "28px 24px 32px",
+            borderBottomLeftRadius: 24,
+            borderBottomRightRadius: 24,
+            boxShadow: "0 24px 48px rgba(0,0,0,0.45)",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 48,
-            }}
-          >
-            <Link to="/" className="site-logo" onClick={() => setMenuOpen(false)}>
-              <span className="mark">K</span>
-              KincaidSMS
-            </Link>
-            <button
-              onClick={() => setMenuOpen(false)}
-              aria-label="Close menu"
-              style={{
-                background: "rgba(255,255,255,0.08)",
-                border: "none",
-                borderRadius: 10,
-                width: 40,
-                height: 40,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "inherit",
-                cursor: "pointer",
-              }}
-            >
-              <IconClose />
-            </button>
-          </div>
-
-          <nav style={{ display: "flex", flexDirection: "column", gap: 32, marginBottom: 48 }}>
+          <nav style={{ display: "flex", flexDirection: "column", gap: 28, marginBottom: 32 }}>
             {NAV_LINKS.map((link) => (
               <a
                 key={link.href}
                 href={link.href}
                 onClick={() => setMenuOpen(false)}
-                style={{ fontSize: 22, color: "inherit", textDecoration: "none" }}
+                style={{ fontSize: 18, color: "#fff", textDecoration: "none" }}
               >
                 {link.label}
               </a>
             ))}
           </nav>
 
-          <div style={{ display: "flex", gap: 12, marginTop: "auto" }}>
+          <div style={{ display: "flex", gap: 12 }}>
             <Link
               to="/login"
               className="btn ghost"
@@ -328,7 +291,7 @@ function SiteHeader() {
               to="/register"
               className="btn"
               onClick={() => setMenuOpen(false)}
-              style={{ flex: 1, textAlign: "center" }}
+              style={{ flex: 2, textAlign: "center" }}
             >
               Get started
             </Link>

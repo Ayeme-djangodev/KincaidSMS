@@ -6,6 +6,7 @@ import { formatNaira } from "../utils/currency";
 export default function Navbar({ user, onLogout }) {
   const navigate = useNavigate();
   const [rate, setRate] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -19,10 +20,17 @@ export default function Navbar({ user, onLogout }) {
       .catch(() => setRate(null));
   }, [user]);
 
+  // Close the mobile menu whenever the route changes (link click) so it
+  // doesn't stay open after navigating.
+  function handleNavClick() {
+    setMenuOpen(false);
+  }
+
   function handleLogout() {
     localStorage.removeItem("token");
     onLogout();
     navigate("/login");
+    setMenuOpen(false);
   }
 
   if (!user) return null;
@@ -31,7 +39,7 @@ export default function Navbar({ user, onLogout }) {
 
   return (
     <div className="navbar">
-      <Link to="/services" className="brand">
+      <Link to="/services" className="brand" onClick={handleNavClick}>
         <span
           style={{
             width: 26,
@@ -50,12 +58,35 @@ export default function Navbar({ user, onLogout }) {
         </span>
         KincaidSMS
       </Link>
-      <nav>
-        <Link to="/services">Service 1</Link>
-        <Link to="/services/textverified">Service 2</Link>
-        <Link to="/services/bloomsms">Service 3</Link>
-        <Link to="/rentals">My Rentals</Link>
-        <Link to="/wallet">Wallet</Link>
+
+      {/* Hamburger toggle -- only shown on mobile via CSS media query */}
+      <button
+        className={`hamburger${menuOpen ? " open" : ""}`}
+        aria-label="Toggle menu"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((open) => !open)}
+      >
+        <span />
+        <span />
+        <span />
+      </button>
+
+      <nav className={menuOpen ? "open" : ""}>
+        <Link to="/services" onClick={handleNavClick}>
+          Service 1
+        </Link>
+        <Link to="/services/textverified" onClick={handleNavClick}>
+          Service 2
+        </Link>
+        <Link to="/services/bloomsms" onClick={handleNavClick}>
+          Service 3
+        </Link>
+        <Link to="/rentals" onClick={handleNavClick}>
+          My Rentals
+        </Link>
+        <Link to="/wallet" onClick={handleNavClick}>
+          Wallet
+        </Link>
         <span className="balance">
           {balanceNaira === null ? "..." : formatNaira(balanceNaira)}
         </span>

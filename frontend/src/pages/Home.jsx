@@ -51,27 +51,6 @@ const STEPS = [
   },
 ];
 
-const TESTIMONIALS = [
-  
-  {
-    quote:
-      "The balance model makes sense to me. I load it once a month and just watch it go down per rental, no card on file with every random app.",
-    name: "Tomás Vega",
-    role: "Independent Developer",
-  },
-  {
-    quote:
-      "Support answered a stock question in a few minutes, not days. That alone put this above two other services I tried first.",
-    name: "Ada Whitfield",
-    role: "Small Business Owner",
-  },
-  {
-    quote:
-      "Clean dashboard, no clutter. I can see exactly what a number cost me and what came through on it.",
-    name: "Ravi Chandrasekaran",
-    role: "Product Manager",
-  },
-];
 
 const FAQS = [
   {
@@ -100,9 +79,7 @@ export default function Home() {
       <FeatureStrip />
       <FeaturesGrid />
       <HowItWorks />
-      <Testimonials />
       <FAQ />
-      <FinalCTA />
       <SiteFooter />
     </div>
   );
@@ -120,7 +97,6 @@ function SiteHeader() {
           <div className="site-nav-links" style={{ display: "flex", gap: 28 }}>
             <a href="#features">Features</a>
             <a href="#how">How it works</a>
-            <a href="#testimonials">Testimonials</a>
             <a href="#faq">FAQ</a>
           </div>
           <div className="site-header-actions">
@@ -258,34 +234,7 @@ function HowItWorks() {
   );
 }
 
-function Testimonials() {
-  return (
-    <section className="section" id="testimonials">
-      <div className="container">
-        <div className="section-head">
-          <span className="eyebrow">
-            <span className="dot" /> from people using it
-          </span>
-          <h2>What renters say</h2>
-        </div>
-        <div className="testimonial-grid">
-          {TESTIMONIALS.map((t) => (
-            <div className="testimonial-card" key={t.name}>
-              <p className="quote">&ldquo;{t.quote}&rdquo;</p>
-              <div className="testimonial-who">
-                <div className="avatar-initials">{initials(t.name)}</div>
-                <div>
-                  <div className="name">{t.name}</div>
-                  <div className="role">{t.role}</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
+
 
 function initials(name) {
   return name
@@ -327,20 +276,6 @@ function FAQ() {
         </div>
       </div>
     </section>
-  );
-}
-
-function FinalCTA() {
-  return (
-    <div className="container section-tight">
-      <div className="cta-band">
-        <h2>Get a working number in the next minute.</h2>
-        <p>Free to sign up. Fund your balance only when you're ready to rent.</p>
-        <Link to="/register" className="btn lg">
-          Create free account <IconArrowRight width={16} height={16} />
-        </Link>
-      </div>
-    </div>
   );
 }
 

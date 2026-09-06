@@ -16,25 +16,10 @@ import {
 
 const FEATURES = [
   {
-    icon: IconClock,
-    title: "Numbers online in seconds",
-    body: "Pick a service, get a live line immediately. No queue, no manual approval, no waiting on stock.",
-  },
-  {
     icon: IconLock,
     title: "Nothing tied to your identity",
     body: "No ID checks, no linking to your real number. Every rental is its own disposable line.",
-  },
-  {
-    icon: IconGhost,
-    title: "Gone when you're done",
-    body: "Release a number the moment you're finished and it's wiped from your account history.",
-  },
-  {
-    icon: IconTag,
-    title: "Pay only for what you use",
-    body: "Prices are shown up front per service. Fund your balance once, spend it down as you rent.",
-  },
+  },  
   {
     icon: IconGlobe,
     title: "Coverage across countries",
@@ -67,24 +52,7 @@ const STEPS = [
 ];
 
 const TESTIMONIALS = [
-  {
-    quote:
-      "I burn through a lot of test accounts for QA. Being able to rent a number and toss it costs me less time than any other verification workaround I've tried.",
-    name: "Priya Nandakumar",
-    role: "QA Engineer",
-  },
-  {
-    quote:
-      "Set up a marketplace account without handing over my real number. The code showed up in maybe ten seconds.",
-    name: "Marcus Oduya",
-    role: "Reseller, Marketplace Goods",
-  },
-  {
-    quote:
-      "Coverage across regions is what sold me — I needed a local number for a service that only allowed one country.",
-    name: "Elena Frayne",
-    role: "Remote Contractor",
-  },
+  
   {
     quote:
       "The balance model makes sense to me. I load it once a month and just watch it go down per rental, no card on file with every random app.",

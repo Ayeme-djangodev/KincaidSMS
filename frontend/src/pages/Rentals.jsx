@@ -6,10 +6,11 @@ const POLL_INTERVAL_MS = 5000;
 
 // Same provider map used on the Dashboard -- all three routers share the
 // same {id}/poll, {id}/cancel shape by design. Only getatext and bloomsms
-// support a "complete" action; TextVerified's API only has cancel.
+// support a "complete" action; Fetch SMS's /verifications endpoint only
+// has cancel (see verifications.py).
 const PROVIDERS = [
   { key: "getatext", label: "Service 1", listPath: "/rentals", canComplete: true },
-  { key: "textverified", label: "Service 2", listPath: "/verifications", canComplete: false },
+  { key: "fetchsms", label: "Service 2", listPath: "/verifications", canComplete: false },
   { key: "bloomsms", label: "Service 3", listPath: "/activations", canComplete: true },
 ];
 

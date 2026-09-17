@@ -2,114 +2,98 @@ import { useEffect, useState } from "react";
 import api, { extractErrorMessage } from "../api";
 import { formatNaira } from "../utils/currency";
 
-const DEBOUNCE_MS = 400;
-const MIN_QUERY_LENGTH = 2;
+// FETCH SMS INTEGRATION (previously TextVerified -- swapped 2026-09).
+// This used to be search-driven (debounced, one network call per query)
+// because TextVerified's own API didn't return price in bulk. Fetch SMS's
+// GET /services/fetchsms DOES return the full catalog with price in one
+// call -- same as Services.jsx's Getatext pattern -- so this is now a
+// single fetch-on-mount plus client-side filtering, identical in shape
+// to Services.jsx. No network call happens while typing, so there's
+// nothing here that can 404/error mid-keystroke the way the old
+// search endpoint did.
 
 export default function TextVerifiedServices({ refreshUser }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [services, setServices] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
   const [rentingService, setRentingService] = useState(null);
-  const [lastRented, setLastRented] = useState(null); // { number, service }
 
   useEffect(() => {
-    const trimmed = query.trim();
-    if (trimmed.length < MIN_QUERY_LENGTH) {
-      setResults([]);
-      setError("");
-      return;
-    }
+    load();
+  }, []);
 
+  async function load() {
     setLoading(true);
     setError("");
-    const timeout = setTimeout(async () => {
-      try {
-        const res = await api.get("/services/textverified/search", {
-          params: { q: trimmed, limit: 8 },
-        });
-        setResults(res.data);
-      } catch (err) {
-        setError(extractErrorMessage(err));
-        setResults([]);
-      } finally {
-        setLoading(false);
-      }
-    }, DEBOUNCE_MS);
-
-    return () => clearTimeout(timeout);
-  }, [query]);
+    try {
+      const res = await api.get("/services/fetchsms");
+      setServices(res.data);
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleRent(service) {
     setRentingService(service.api_name);
     setError("");
-    setLastRented(null);
     try {
       const res = await api.post("/verifications/rent", { service: service.api_name });
       await refreshUser();
-      setLastRented({ number: res.data.number, service: service.display_name });
+      setRentingService(null);
+      setError("");
+      // Keep the simple success indicator the old page had, without a
+      // dedicated verifications history page yet.
+      window.alert(`Rented ${service.display_name} — number: ${res.data.number}`);
     } catch (err) {
       setError(extractErrorMessage(err));
-    } finally {
       setRentingService(null);
     }
   }
 
+  const filtered = services.filter((s) =>
+    s.display_name.toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
     <div className="container">
       <h2>Service 2</h2>
-      <p style={{ color: "var(--text-dim)", fontSize: 13 }}>
-        Search for a service to see live pricing. Type at least{" "}
-        {MIN_QUERY_LENGTH} characters and give it a second.
-      </p>
 
       <div className="form-group" style={{ maxWidth: 320 }}>
         <input
           placeholder="Search services..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          autoFocus
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
       {error && <div className="error-text">{error}</div>}
 
-      {lastRented && (
-        <div className="card" style={{ borderColor: "var(--success)" }}>
-          Rented <strong>{lastRented.service}</strong> — number:{" "}
-          <span className="code-pill">{lastRented.number}</span>
-          <div style={{ color: "var(--text-dim)", fontSize: 13, marginTop: 4 }}>
-            A dedicated verifications history page isn't built yet — for now,
-            hold onto this number.
-          </div>
-        </div>
-      )}
-
       <div className="card">
-        {query.trim().length < MIN_QUERY_LENGTH ? (
-          <div style={{ color: "var(--text-dim)" }}>
-            Start typing to search TextVerified's service catalog.
-          </div>
-        ) : loading ? (
-          <div>Searching...</div>
+        {loading ? (
+          <div>Loading services...</div>
         ) : (
           <table>
             <thead>
               <tr>
                 <th>Service</th>
                 <th>Price</th>
+                <th>Stock</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {results.map((s) => (
+              {filtered.map((s) => (
                 <tr key={s.api_name}>
                   <td>{s.display_name}</td>
                   <td>{formatNaira(s.customer_price_naira)}</td>
+                  <td>{s.stock > 0 ? s.stock : "Out of stock"}</td>
                   <td>
                     <button
                       className="btn"
-                      disabled={rentingService === s.api_name}
+                      disabled={s.stock <= 0 || rentingService === s.api_name}
                       onClick={() => handleRent(s)}
                     >
                       {rentingService === s.api_name ? "Renting..." : "Rent"}
@@ -117,10 +101,10 @@ export default function TextVerifiedServices({ refreshUser }) {
                   </td>
                 </tr>
               ))}
-              {results.length === 0 && (
+              {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={3} style={{ color: "var(--text-dim)" }}>
-                    No matching services found.
+                  <td colSpan={4} style={{ color: "var(--text-dim)" }}>
+                    No services found.
                   </td>
                 </tr>
               )}

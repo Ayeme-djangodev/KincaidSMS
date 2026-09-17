@@ -8,30 +8,12 @@ class Settings(BaseSettings):
     # 0.20 == 20% markup on top of Getatext's price
     MARKUP_PERCENT: float = 0.20
 
-    # TEXTVERIFIED ADDITION.
-    # Per TextVerified's docs, you generate a bearer token using your
-    # account email + API key. Their official Python package's parameter
-    # is literally named `api_username` though (not `api_email`) -- check
-    # your TextVerified dashboard's API settings page for the exact value
-    # they want here; it may just be your account email.
-    TEXTVERIFIED_API_KEY: str
-    TEXTVERIFIED_API_USERNAME: str
-    TEXTVERIFIED_BASE_URL: str = "https://www.textverified.com"
-
-    # TEXTVERIFIED ADDITION #2: services.list() doesn't return price, so
-    # populating the catalog means one pricing API call PER SERVICE. That's
-    # slow and hits TextVerified's rate limit if done on every /services
-    # request. These cache the result and pace the pricing calls out.
-    # Tune these based on what TextVerified's actual rate limit turns out
-    # to be -- 0.35s/call is a conservative guess, not a confirmed number.
-    TEXTVERIFIED_SERVICES_CACHE_TTL_SECONDS: int = 21600  # 6 hours
-    # Bumped from an initial 0.35s guess -- real testing showed the rate
-    # limit tripped after only ~40-66 calls even at that pace, so
-    # TextVerified's actual threshold is tighter than first assumed. This
-    # is STILL a guess, just a more conservative one -- tune based on
-    # what you observe in the logs (look for "rate limit hit after
-    # pricing N NEW services").
-    TEXTVERIFIED_PRICING_REQUEST_DELAY_SECONDS: float = 1.5
+    # FETCH SMS INTEGRATION (previously TextVerified -- swapped 2026-09).
+    # Auth is a single Bearer token, no refresh/token-expiry logic needed
+    # (unlike TextVerified's bearer-refresh flow). Rate limit per their
+    # docs is a generous 100 req/s per key, so no caching/pacing layer
+    # is needed the way TextVerified's pricing calls required.
+    FETCHSMS_API_KEY: str
 
     # BLOOMSMS ADDITION.
     # Static Bearer token, no refresh needed (unlike TextVerified). Their

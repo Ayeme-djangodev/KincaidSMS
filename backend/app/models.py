@@ -118,13 +118,11 @@ class Rental(Base):
 
 class Verification(Base):
     """
-    TEXTVERIFIED ADDITION.
-    Deliberately a separate table from Rental rather than a shared table
-    with a provider column (your call) -- TextVerified's own domain
-    language is "verification", not "rental", and the two providers'
-    lifecycles/fields don't map 1:1 (no Getatext-style "complete" action
-    here, TextVerified has reactivate/reuse/report instead -- those are
-    out of scope for now, see PROGRESS_NOTES).
+    FETCH SMS INTEGRATION (previously TextVerified -- swapped 2026-09,
+    TextVerified fully removed). Deliberately a separate table from
+    Rental rather than a shared table with a provider column (your call)
+    -- this provider's own domain language is "verification", not
+    "rental".
 
     Mirrors Rental's shape closely so the two are easy to reason about
     side by side, and so wallet ledger entries look the same regardless
@@ -136,9 +134,10 @@ class Verification(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
-    # TextVerified's own id for this verification. Their IDs are strings
-    # (not ints like Getatext's), per their API docs/python client.
-    textverified_id = Column(String, nullable=True, index=True)
+    # Fetch SMS's own id for this verification (a UUID string per their
+    # docs). Column renamed from textverified_id -- see the Alembic
+    # migration this change ships with.
+    fetchsms_id = Column(String, nullable=True, index=True)
 
     service_api_name = Column(String, nullable=False)
     service_display_name = Column(String, nullable=True)

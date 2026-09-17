@@ -6,11 +6,11 @@ from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.fx import get_usd_to_ngn_rate, naira_to_usd_cents, usd_cents_to_naira
-from app.textverified_client import (
+from app.fetchsms_client import (
     create_verification,
     get_sms_code,
     cancel_verification,
-    TextVerifiedClientError,
+    FetchSMSClientError,
 )
 
 router = APIRouter(prefix="/verifications", tags=["verifications"])
@@ -95,29 +95,32 @@ def rent(
 
     try:
         data = create_verification(
-            service_name=payload.service,
-            capability="sms",
+            service=payload.service,
+            area_code=payload.area_code,
             max_price=round(base_max_price, 2),
         )
-    except TextVerifiedClientError as e:
+    except FetchSMSClientError as e:
         raise HTTPException(status_code=e.status_code if e.status_code < 500 else 502, detail=e.message)
 
     cost_cents = _to_cents(data["cost"])
     charged_cents = round(cost_cents * (1 + MARKUP))
 
     if charged_cents > current_user.balance_cents:
-        # Same protective pattern as rentals.py: TextVerified already
+        # Same protective pattern as rentals.py: Fetch SMS already
         # charged our account balance, so don't leave it dangling -- try
-        # to cancel immediately and surface an error.
+        # to cancel immediately and surface an error. (In practice this
+        # shouldn't fire for Fetch SMS since max_price is already
+        # enforced client-side in fetchsms_client.py before this call --
+        # kept as a defensive fallback in case markup/pricing drifts.)
         try:
             cancel_verification(data["id"])
-        except TextVerifiedClientError:
+        except FetchSMSClientError:
             pass
         raise HTTPException(status_code=400, detail="Insufficient balance for the final price")
 
     verification = models.Verification(
         user_id=current_user.id,
-        textverified_id=data["id"],
+        fetchsms_id=data["id"],
         service_api_name=payload.service,
         service_display_name=payload.service,
         number=data.get("number"),
@@ -181,8 +184,8 @@ def poll_verification_status(
         return _attach_naira(v)
 
     try:
-        code = get_sms_code(v.textverified_id)
-    except TextVerifiedClientError as e:
+        code = get_sms_code(v.fetchsms_id)
+    except FetchSMSClientError as e:
         raise HTTPException(status_code=e.status_code if e.status_code < 500 else 502, detail=e.message)
 
     if code:
@@ -205,17 +208,20 @@ def cancel(
         raise HTTPException(status_code=400, detail="Only active verifications can be cancelled")
 
     try:
-        cancel_verification(v.textverified_id)
-    except TextVerifiedClientError as e:
+        cancel_verification(v.fetchsms_id)
+    except FetchSMSClientError as e:
         raise HTTPException(status_code=e.status_code if e.status_code < 500 else 502, detail=e.message)
 
-    # UNCONFIRMED, FLAGGED: unlike Getatext's cancel-rental response (which
-    # tells us the final prorated cost so we can refund the difference),
-    # I don't have confirmation that TextVerified's cancel() returns a
-    # final-cost figure at all -- their python client's cancel() just
-    # returns a bool per its docs. Refunding the FULL charged amount here
-    # as the safe default (rather than assuming partial usage like
-    # Getatext) until this is confirmed against a real response.
+    # CONFIRMED (unlike the old TextVerified integration): Fetch SMS's own
+    # docs are explicit that /verifications is only charged on receipt of
+    # a code -- "if the window closes (or you cancel) before any code
+    # arrives, the charge is automatically refunded". Since we only reach
+    # this line when v.status was still "active" (no code received yet,
+    # checked above) and cancel_verification() didn't raise a 409 (which
+    # it would if a code had just arrived in a race), Fetch SMS has
+    # already refunded itself on their end -- so refunding the FULL
+    # charged amount here is the confirmed-correct behavior, not a
+    # fallback guess like it was for TextVerified.
     v.status = models.RentalStatus.cancelled
     db.add(v)
 

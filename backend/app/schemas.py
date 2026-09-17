@@ -161,22 +161,21 @@ class RentalOut(BaseModel):
         from_attributes = True
 
 
-# ---------- Verifications (TextVerified) ----------
-# TEXTVERIFIED ADDITION. Deliberately separate schemas from RentNumberRequest
-# / RentalOut (mirrors the separate-table decision on the model side) --
-# TextVerified's request shape is simpler (no carrier/area-code options,
-# capability is fixed to "sms" for this app's purposes) and its id is a
-# string, not an int.
+# ---------- Verifications (Fetch SMS) ----------
+# FETCH SMS INTEGRATION (previously TextVerified -- swapped 2026-09).
+# Deliberately separate schemas from RentNumberRequest / RentalOut
+# (mirrors the separate-table decision on the model side).
 
 class CreateVerificationRequest(BaseModel):
     service: str
+    area_code: Optional[str] = None
     max_price_cents: Optional[int] = None
     max_price_naira: Optional[float] = None
 
 
 class VerificationOut(BaseModel):
     id: int
-    textverified_id: Optional[str]
+    fetchsms_id: Optional[str]
     service_api_name: str
     service_display_name: Optional[str]
     number: Optional[str]

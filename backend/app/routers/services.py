@@ -1,22 +1,28 @@
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
 from app import models, schemas
 from app.config import settings
 from app.deps import get_current_user
 from app.fx import get_usd_to_ngn_rate
 from app.getatext_client import prices_info, GetatextError
-from app.textverified_client import (
-    search_services as tv_search_services,
-    TextVerifiedClientError,
-)
+from app.fetchsms_client import list_services as fetchsms_list_services, FetchSMSClientError
 from app.bloomsms_client import list_services as bloom_list_services, BloomSMSError
 
 router = APIRouter(prefix="/services", tags=["services"])
 
 logger = logging.getLogger("uvicorn.error")
+
+# FETCH SMS INTEGRATION (previously TextVerified -- swapped 2026-09).
+# Unlike TextVerified, Fetch SMS's GET /v1/services returns price_cents
+# directly for every row in one call -- no per-service pricing calls
+# needed, so this no longer needs the search-driven, rate-limit-avoidance
+# design TextVerified required. Cached the same way as BloomSMS below,
+# purely as good manners under concurrent page loads.
+_fetchsms_cache = {"data": None, "fetched_at": 0.0}
+_FETCHSMS_CACHE_TTL_SECONDS = 300  # 5 minutes
 
 # BLOOMSMS ADDITION. Unlike TextVerified, BloomSMS returns price directly
 # in one call (no per-service pricing needed), and their rate limit
@@ -73,13 +79,11 @@ def _build_service_out(
 @router.get("", response_model=list[schemas.ServiceOut])
 def list_services(current_user: models.User = Depends(get_current_user)):
     """
-    CHANGED: this is Getatext-only again. It used to also bulk-price and
-    append the entire TextVerified catalog here, which is exactly what
-    triggered TextVerified's rate limit (hundreds of pricing calls on
-    every single page load). TextVerified now lives on its own
-    search-driven endpoint below -- see /services/textverified/search --
-    so its page only ever prices the handful of services someone actually
-    searches for.
+    Getatext-only. Fetch SMS and BloomSMS each have their own bulk
+    listing endpoint below (/services/fetchsms, /services/bloomsms) --
+    kept separate rather than merged into one big list/call, same
+    reasoning as the original TextVerified split: each provider's own
+    page only pays for the calls it actually needs.
     """
     fx_rate = get_usd_to_ngn_rate()
 
@@ -130,39 +134,41 @@ def list_services(current_user: models.User = Depends(get_current_user)):
     return out
 
 
-@router.get("/textverified/search", response_model=list[schemas.ServiceOut])
-def search_textverified_services(
-    q: str = Query(..., min_length=1, max_length=100, description="Search term, e.g. 'whatsapp'"),
-    limit: int = Query(8, ge=1, le=20),
-    current_user: models.User = Depends(get_current_user),
-):
+@router.get("/fetchsms", response_model=list[schemas.ServiceOut])
+def list_fetchsms_services(current_user: models.User = Depends(get_current_user)):
     """
-    Search-driven TextVerified listing. Only prices services matching `q`
-    (substring match against the service name), capped at `limit`. This
-    is deliberately NOT a bulk listing endpoint -- see the note on
-    list_services() above for why. `q` is required (no empty-query
-    "browse everything" mode) specifically to keep the number of pricing
-    calls small and predictable.
+    Bulk listing, like Getatext's and BloomSMS's -- Fetch SMS returns
+    price directly in one call, so unlike the old TextVerified endpoint
+    this needed no search-driven workaround. 5 min cache purely to be
+    polite to their API under concurrent page loads.
     """
     fx_rate = get_usd_to_ngn_rate()
 
-    try:
-        rows = tv_search_services(q, limit=limit)
-    except TextVerifiedClientError as e:
-        logger.error("TextVerified search error for q=%r: %s", q, e.message)
-        raise HTTPException(status_code=502, detail=f"TextVerified error: {e.message}")
+    now = time.time()
+    if _fetchsms_cache["data"] is not None and (now - _fetchsms_cache["fetched_at"]) < _FETCHSMS_CACHE_TTL_SECONDS:
+        rows = _fetchsms_cache["data"]
+    else:
+        try:
+            rows = fetchsms_list_services()
+            _fetchsms_cache["data"] = rows
+            _fetchsms_cache["fetched_at"] = now
+        except FetchSMSClientError as e:
+            logger.error("Fetch SMS error while listing services: %s", e.message)
+            # Same graceful-degradation pattern as the other providers --
+            # serve a stale cache if we have one rather than erroring out.
+            if _fetchsms_cache["data"] is not None:
+                rows = _fetchsms_cache["data"]
+            else:
+                raise HTTPException(status_code=502, detail=f"Fetch SMS error: {e.message}")
 
     return [
         _build_service_out(
-            provider="textverified",
+            provider="fetchsms",
             api_name=row["api_name"],
             display_name=row["display_name"],
             base_cents=_to_cents(row["base_price_usd"]),
             fx_rate=fx_rate,
-            # Stock isn't confirmed available from TextVerified's API (see
-            # textverified_client.py notes) -- defaulting to 1/in-stock
-            # rather than 0 so results don't wrongly show as sold out.
-            stock=1,
+            stock=int(row.get("short_available") or 0),
             multiple_sms=False,
         )
         for row in rows

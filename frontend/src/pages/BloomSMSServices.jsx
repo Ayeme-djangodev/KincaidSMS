@@ -2,6 +2,14 @@ import { useEffect, useState } from "react";
 import api, { extractErrorMessage } from "../api";
 import { formatNaira } from "../utils/currency";
 
+// If the API base URL is wrong on deployment, the server often returns the
+// SPA's index.html (a string) with HTTP 200. Calling .map/.filter on that
+// throws during render and React unmounts everything -> blank page.
+// Always coerce API payloads to arrays before putting them in state.
+const asArray = (v) => (Array.isArray(v) ? v : []);
+
+const DEFAULT_COUNTRY = "187"; // United States, BloomSMS's own default
+
 export default function BloomSMSServices({ refreshUser }) {
   const [services, setServices] = useState([]);
   const [countries, setCountries] = useState([]);
@@ -12,20 +20,73 @@ export default function BloomSMSServices({ refreshUser }) {
   const [search, setSearch] = useState("");
   const [rentingService, setRentingService] = useState(null);
   const [lastRented, setLastRented] = useState(null); // { number, service, activationId }
-  const [smsCode, setSmsCode] = useState(null); // { code, full_text } once it arrives
+  const [smsCode, setSmsCode] = useState(null); // { code, full_text }
   const [waitingForCode, setWaitingForCode] = useState(false);
 
+  // Load countries once.
   useEffect(() => {
+    let ignore = false;
+
+    async function loadCountries() {
+      setLoadingCountries(true);
+      try {
+        const res = await api.get("/services/bloomsms/countries");
+        if (ignore) return;
+        const list = asArray(res.data)
+          .map((c) => ({ code: String(c.code ?? c.id ?? ""), name: c.name || "" }))
+          .filter((c) => c.code !== "");
+        setCountries(list);
+        if (list.length > 0) {
+          // Prefer the US (BloomSMS's default) over whatever happens to be first.
+          const preferred = list.find((c) => c.code === DEFAULT_COUNTRY) || list[0];
+          setSelectedCountry(preferred.code);
+        }
+      } catch (err) {
+        if (!ignore) setError(extractErrorMessage(err));
+      } finally {
+        if (!ignore) setLoadingCountries(false);
+      }
+    }
+
     loadCountries();
+    return () => {
+      ignore = true;
+    };
   }, []);
 
+  // Load services once countries have resolved, and whenever the country
+  // changes. The `ignore` flag stops a slow earlier response from
+  // overwriting a newer one.
   useEffect(() => {
+    if (loadingCountries) return;
+    let ignore = false;
+
+    async function load() {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await api.get("/services/bloomsms", {
+          params: selectedCountry ? { country: selectedCountry } : {},
+        });
+        if (!ignore) setServices(asArray(res.data));
+      } catch (err) {
+        if (!ignore) {
+          setServices([]);
+          setError(extractErrorMessage(err));
+        }
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCountry]);
+    return () => {
+      ignore = true;
+    };
+  }, [selectedCountry, loadingCountries]);
 
   // Poll our own backend (not BloomSMS directly) for the SMS code, every
-  // 3s, up to 3 minutes. Stops as soon as a code shows up or on unmount.
+  // 3s, up to 3 minutes. Stops when a code shows up or on unmount.
   useEffect(() => {
     if (!lastRented?.activationId) return;
 
@@ -33,15 +94,17 @@ export default function BloomSMSServices({ refreshUser }) {
     setWaitingForCode(true);
 
     let cancelled = false;
+    let timer = null;
+    const activationId = lastRented.activationId;
     const startedAt = Date.now();
     const TIMEOUT_MS = 3 * 60 * 1000;
 
     async function poll() {
       if (cancelled) return;
       try {
-        const res = await api.get(`/activations/${lastRented.activationId}/code`);
+        const res = await api.get(`/activations/${activationId}/code`);
         if (cancelled) return;
-        if (res.data.code) {
+        if (res.data && res.data.code) {
           setSmsCode({ code: res.data.code, full_text: res.data.full_text });
           setWaitingForCode(false);
           return;
@@ -53,47 +116,19 @@ export default function BloomSMSServices({ refreshUser }) {
         setWaitingForCode(false);
         return;
       }
-      setTimeout(poll, 3000);
+      timer = setTimeout(poll, 3000);
     }
 
     poll();
 
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
   }, [lastRented?.activationId]);
 
-  async function loadCountries() {
-    setLoadingCountries(true);
-    try {
-      const res = await api.get("/services/bloomsms/countries");
-      setCountries(res.data);
-      if (res.data.length > 0 && !selectedCountry) {
-        setSelectedCountry(res.data[0].code);
-      }
-    } catch (err) {
-      setError(extractErrorMessage(err));
-    } finally {
-      setLoadingCountries(false);
-    }
-  }
-
-  async function load() {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await api.get("/services/bloomsms", {
-        params: selectedCountry ? { country: selectedCountry } : {},
-      });
-      setServices(res.data);
-    } catch (err) {
-      setError(extractErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleRent(service) {
+    if (rentingService) return; // one rental at a time -- this spends money
     setRentingService(service.api_name);
     setError("");
     setLastRented(null);
@@ -102,16 +137,22 @@ export default function BloomSMSServices({ refreshUser }) {
         service: service.api_name,
         country: selectedCountry,
       });
-      await refreshUser();
-      // ASSUMPTION FLAGGED: guessing your /activations/rent response
-      // includes the activation id as `activation_id` (falling back to
-      // `id`). Adjust this line if your backend names it differently --
-      // it has to match whatever key the sms.received webhook uses.
+
+      // Show the number immediately: the money is already spent, so a
+      // failure in refreshUser() below must never hide it from the user.
+      // ASSUMPTION FLAGGED: response keys are `number` and `activation_id`
+      // (falling back to `id`). Adjust if your backend names them differently.
       setLastRented({
-        number: res.data.number,
+        number: res.data.number || res.data.phone_number,
         service: service.display_name,
         activationId: res.data.activation_id || res.data.id,
       });
+
+      try {
+        if (typeof refreshUser === "function") await refreshUser();
+      } catch {
+        // Balance refresh failed; the rental itself succeeded.
+      }
     } catch (err) {
       setError(extractErrorMessage(err));
     } finally {
@@ -119,8 +160,9 @@ export default function BloomSMSServices({ refreshUser }) {
     }
   }
 
+  const query = search.toLowerCase();
   const filtered = services.filter((s) =>
-    s.display_name.toLowerCase().includes(search.toLowerCase())
+    (s.display_name || "").toLowerCase().includes(query)
   );
 
   return (
@@ -206,7 +248,7 @@ export default function BloomSMSServices({ refreshUser }) {
                   <td>
                     <button
                       className="btn"
-                      disabled={s.stock <= 0 || rentingService === s.api_name}
+                      disabled={s.stock <= 0 || rentingService !== null}
                       onClick={() => handleRent(s)}
                     >
                       {rentingService === s.api_name ? "Renting..." : "Rent"}

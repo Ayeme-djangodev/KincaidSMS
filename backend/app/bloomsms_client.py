@@ -3,30 +3,31 @@ app/bloomsms_client.py
 
 Thin wrapper around the BloomSMS API (https://bloomsms.com/api-docs).
 
-Raw httpx, same pattern as getatext_client.py -- UNLIKE textverified_client.py,
-BloomSMS's docs are a normal static page with full endpoint/payload
-documentation and a clean {status, data, errors} envelope, so there's no
-need to guess at wire-level details or wrap a third-party package here.
+Raw httpx, same pattern as getatext_client.py. BloomSMS's docs have full
+endpoint/payload documentation and a clean {status, data, errors} envelope.
 
-Auth is a static Bearer token (no refresh needed, unlike TextVerified).
-Their docs publish a rate limit of 60 requests/min per API key -- well
-above what a single /services call needs, since (unlike TextVerified)
-BloomSMS's services listing returns price directly, no per-service
-pricing calls required.
+Auth is a static Bearer token. Documented rate limit: 60 requests/min per
+API key.
 
 Only short-term "activation" endpoints are implemented (rent, status,
-cancel/complete). BloomSMS's separate Long Rentals system
-(1d/3d/7d/14d/30d periods, auto-renew) is out of scope for now, same
-treatment as Getatext's long-rentals and TextVerified's renewable-rental
-system.
+cancel/complete). Long Rentals are out of scope for now.
 
 >>> UNCERTAINTY FLAGGED: their docs don't show an example response body
 for cancelling a SHORT-TERM activation (only for long-rentals, which
-show a refund_amount field). update_activation_status() below defensively
-checks for a refund figure in the response and falls back to refunding
-the full charged amount if none is present -- same conservative default
-used for TextVerified's cancel, for the same reason (no confirmed data
-on partial-usage refund behavior for this specific call).
+show a refund_amount field). update_activation_status() returns the
+response as-is; the caller should check for a refund figure and fall back
+to refunding the full charged amount if none is present.
+
+CHANGES IN THIS VERSION
+- Added list_countries() (the frontend calls /services/bloomsms/countries
+  but the client had no way to fetch them). Output is normalised to
+  {"code", "name"} because BloomSMS returns {"id", "name"}.
+- Network failures (timeouts, DNS, connection refused) are now converted
+  into BloomSMSError(502) instead of bubbling up as raw httpx exceptions,
+  which surfaced as opaque 500s.
+- _unwrap() no longer crashes if the body is valid JSON but not an object.
+- Money-spending calls are never retried automatically (no idempotency key
+  is documented, so a retry after a timeout could double-charge).
 """
 
 from typing import Any, Optional
@@ -54,7 +55,21 @@ def _headers() -> dict:
 
 
 def _client() -> httpx.Client:
+    # BLOOMSMS_BASE_URL must be https://bloomsms.com/api/v1 (no trailing
+    # path segments, no /api-docs). httpx keeps the base path when joining.
     return httpx.Client(base_url=settings.BLOOMSMS_BASE_URL, timeout=20.0)
+
+
+def _request(method: str, path: str, **kwargs) -> Any:
+    """Send a request and unwrap the envelope; map transport errors."""
+    try:
+        with _client() as client:
+            resp = client.request(method, path, headers=_headers(), **kwargs)
+    except httpx.TimeoutException:
+        raise BloomSMSError("BloomSMS request timed out", 504, code="TIMEOUT")
+    except httpx.RequestError as exc:
+        raise BloomSMSError(f"Could not reach BloomSMS: {exc}", 502, code="UNREACHABLE")
+    return _unwrap(resp)
 
 
 def _unwrap(resp: httpx.Response) -> Any:
@@ -62,10 +77,17 @@ def _unwrap(resp: httpx.Response) -> Any:
     try:
         body = resp.json()
     except ValueError:
-        raise BloomSMSError(f"Non-JSON response from BloomSMS: {resp.text}", resp.status_code)
+        raise BloomSMSError(
+            f"Non-JSON response from BloomSMS (HTTP {resp.status_code})", resp.status_code
+        )
+
+    if not isinstance(body, dict):
+        raise BloomSMSError("Unexpected response shape from BloomSMS", resp.status_code)
 
     if body.get("status") == "error" or body.get("errors"):
         err = body.get("errors") or {}
+        if not isinstance(err, dict):
+            err = {"message": str(err)}
         raise BloomSMSError(
             err.get("message", "Unknown BloomSMS error"),
             resp.status_code,
@@ -79,51 +101,54 @@ def _unwrap(resp: httpx.Response) -> Any:
 
 
 def get_balance() -> dict:
-    with _client() as client:
-        resp = client.get("/balance", headers=_headers())
-    return _unwrap(resp)
+    return _request("GET", "/balance")
+
+
+def list_countries() -> list[dict]:
+    """
+    Returns [{"code": "187", "name": "United States"}, ...].
+    BloomSMS calls the field `id`; we expose it as `code` to match the
+    frontend. If your router already remaps this, drop the remap here.
+    """
+    data = _request("GET", "/countries")
+    raw = (data or {}).get("countries", [])
+    return [
+        {"code": str(c.get("code", c.get("id"))), "name": c.get("name", "")}
+        for c in raw
+        if c.get("code", c.get("id")) is not None
+    ]
 
 
 def list_services(country: str = "187") -> list[dict]:
     """
     Defaults to country 187 (US), matching BloomSMS's own documented
-    default. Unlike TextVerified, price and stock come back directly in
-    this one call -- no per-service pricing lookups needed.
+    default. Price and stock come back directly in this one call.
     """
-    with _client() as client:
-        resp = client.get("/services", params={"country": country}, headers=_headers())
-    data = _unwrap(resp)
-    return data.get("services", []) if data else []
+    data = _request("GET", "/services", params={"country": country})
+    return (data or {}).get("services", [])
 
 
 def rent_activation(
     service: str, country: Optional[str] = None, max_price: Optional[float] = None
 ) -> dict:
+    """Spends money. Do NOT auto-retry on timeout/502 -- check balance first."""
     payload: dict[str, Any] = {"service": service}
-    if country is not None:
+    if country:
         payload["country"] = country
     if max_price is not None:
         payload["max_price"] = max_price
-
-    with _client() as client:
-        resp = client.post("/activations", json=payload, headers=_headers())
-    return _unwrap(resp)
+    return _request("POST", "/activations", json=payload)
 
 
 def get_activation_status(activation_id: str) -> dict:
-    with _client() as client:
-        resp = client.get(f"/activations/{activation_id}", headers=_headers())
-    return _unwrap(resp)
+    return _request("GET", f"/activations/{activation_id}")
 
 
 def update_activation_status(activation_id: str, status: str) -> dict:
     """
     status: "cancel" | "complete" | "request_another_sms"
-    (request_another_sms isn't wired up in the router yet -- out of
-    scope for v1, same as re-rent and long rentals.)
+    (request_another_sms isn't wired up in the router yet.)
     """
-    with _client() as client:
-        resp = client.patch(
-            f"/activations/{activation_id}", json={"status": status}, headers=_headers()
-        )
-    return _unwrap(resp)
+    if status not in {"cancel", "complete", "request_another_sms"}:
+        raise BloomSMSError(f"Invalid status: {status}", 422, code="INVALID_PARAMETER")
+    return _request("PATCH", f"/activations/{activation_id}", json={"status": status})

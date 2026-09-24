@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.routers import auth, wallet, services, rentals, verifications, activations, admin
 from app.routers import fx
+from app.routers import bloomsms_webhooks
 
 # SCHEMA MANAGEMENT CHANGE: Base.metadata.create_all() used to run here on
 # every startup. That's removed now that Alembic owns the schema -- run
@@ -37,6 +38,7 @@ app.include_router(verifications.router)
 app.include_router(activations.router)
 app.include_router(admin.router)
 app.include_router(fx.router)
+app.include_router(bloomsms_webhooks.router)
 
 
 @app.get("/health")

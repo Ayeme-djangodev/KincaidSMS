@@ -2,10 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import api, { extractErrorMessage } from "../api";
 import { formatNaira } from "../utils/currency";
 
-// If the API base URL is wrong on deployment, the server often returns the
-// SPA's index.html (a string) with HTTP 200. Calling .map/.filter on that
-// throws during render and React unmounts everything -> blank page.
-// Always coerce API payloads to arrays before putting them in state.
+// MERGED from two drafts (2026-09-24):
+// - Kept from the fuller draft: asArray safety net (defends against the
+//   SPA-fallback-returns-index.html-as-200 bug that caused a blank page
+//   before), searchable country combobox with retry-on-failure, and the
+//   top-5-by-stock default list (matching the same pattern just applied
+//   to Services.jsx and TextVerifiedServices.jsx for consistency).
+// - Fixed from the fuller draft: it polled a NONEXISTENT
+//   /activations/{id}/code endpoint (your activations.py router only
+//   has /activations/{id}/poll) and referenced a `full_text` field
+//   ActivationOut doesn't have -- both silently never worked, the 404
+//   just got swallowed for the full 3-minute timeout. Reverted to the
+//   correct /poll endpoint and the real field names (id, number, code)
+//   confirmed against activations.py / schemas.py.
 const asArray = (v) => (Array.isArray(v) ? v : []);
 
 const DEFAULT_COUNTRY = "187"; // United States, BloomSMS's own default
@@ -30,7 +39,7 @@ export default function BloomSMSServices({ refreshUser }) {
   const [search, setSearch] = useState("");
   const [rentingService, setRentingService] = useState(null);
   const [lastRented, setLastRented] = useState(null); // { number, service, activationId }
-  const [smsCode, setSmsCode] = useState(null); // { code, full_text }
+  const [smsCode, setSmsCode] = useState(null); // { code }
   const [waitingForCode, setWaitingForCode] = useState(false);
 
   // Country picker state
@@ -130,8 +139,9 @@ export default function BloomSMSServices({ refreshUser }) {
     };
   }, [countryOpen]);
 
-  // Poll our own backend (not BloomSMS directly) for the SMS code, every
-  // 3s, up to 3 minutes. Stops when a code shows up or on unmount.
+  // Poll GET /activations/{id}/poll (the real endpoint -- see
+  // activations.py) every 3s, up to 3 minutes. Stops when a code shows
+  // up or on unmount.
   useEffect(() => {
     if (!lastRented?.activationId) return;
 
@@ -147,10 +157,10 @@ export default function BloomSMSServices({ refreshUser }) {
     async function poll() {
       if (cancelled) return;
       try {
-        const res = await api.get(`/activations/${activationId}/code`);
+        const res = await api.get(`/activations/${activationId}/poll`);
         if (cancelled) return;
         if (res.data && res.data.code) {
-          setSmsCode({ code: res.data.code, full_text: res.data.full_text });
+          setSmsCode({ code: res.data.code });
           setWaitingForCode(false);
           return;
         }
@@ -192,12 +202,11 @@ export default function BloomSMSServices({ refreshUser }) {
 
       // Show the number immediately: the money is already spent, so a
       // failure in refreshUser() below must never hide it from the user.
-      // ASSUMPTION FLAGGED: response keys are `number` and `activation_id`
-      // (falling back to `id`). Adjust if your backend names them differently.
+      // Field names confirmed against schemas.ActivationOut: id, number.
       setLastRented({
-        number: res.data.number || res.data.phone_number,
+        number: res.data.number,
         service: service.display_name,
-        activationId: res.data.activation_id || res.data.id,
+        activationId: res.data.id,
       });
 
       try {
@@ -222,8 +231,9 @@ export default function BloomSMSServices({ refreshUser }) {
 
   const query = search.trim().toLowerCase();
 
-  // BloomSMS exposes no popularity metric, so "top" = most numbers in stock
-  // for the selected country.
+  // BloomSMS exposes no popularity metric, so "top" = most numbers in
+  // stock for the selected country -- same convention as Services.jsx
+  // and TextVerifiedServices.jsx.
   const topServices = [...services]
     .filter((s) => s.stock > 0)
     .sort((a, b) => b.stock - a.stock)
@@ -361,11 +371,6 @@ export default function BloomSMSServices({ refreshUser }) {
           {smsCode ? (
             <div style={{ marginTop: 8 }}>
               Code: <span className="code-pill">{smsCode.code}</span>
-              {smsCode.full_text && (
-                <div style={{ color: "var(--text-dim)", fontSize: 13, marginTop: 4 }}>
-                  {smsCode.full_text}
-                </div>
-              )}
             </div>
           ) : waitingForCode ? (
             <div style={{ color: "var(--text-dim)", fontSize: 13, marginTop: 4 }}>
@@ -373,8 +378,7 @@ export default function BloomSMSServices({ refreshUser }) {
             </div>
           ) : (
             <div style={{ color: "var(--text-dim)", fontSize: 13, marginTop: 4 }}>
-              No code received yet — a dedicated activations history page
-              isn't built yet, so hold onto this number.
+              No code received yet — check "My Rentals" for updates.
             </div>
           )}
         </div>

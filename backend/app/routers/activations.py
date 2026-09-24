@@ -179,6 +179,12 @@ def poll_activation_status(
     if a.status != models.RentalStatus.active:
         return _attach_naira(a)
 
+    if a.code:
+        # The sms.received webhook already delivered this -- exactly the
+        # "eliminates the need to constantly poll the API" case BloomSMS's
+        # webhook docs describe. No need to hit BloomSMS again.
+        return _attach_naira(a)
+
     try:
         data = get_activation_status(a.bloomsms_id)
     except BloomSMSError as e:

@@ -9,7 +9,11 @@ from app.deps import get_current_user
 from app.fx import get_usd_to_ngn_rate
 from app.getatext_client import prices_info, GetatextError
 from app.fetchsms_client import list_services as fetchsms_list_services, FetchSMSClientError
-from app.bloomsms_client import list_services as bloom_list_services, BloomSMSError
+from app.bloomsms_client import (
+    list_services as bloom_list_services,
+    list_countries as bloom_list_countries,
+    BloomSMSError,
+)
 
 router = APIRouter(prefix="/services", tags=["services"])
 
@@ -24,14 +28,17 @@ logger = logging.getLogger("uvicorn.error")
 _fetchsms_cache = {"data": None, "fetched_at": 0.0}
 _FETCHSMS_CACHE_TTL_SECONDS = 300  # 5 minutes
 
-# BLOOMSMS ADDITION. Unlike TextVerified, BloomSMS returns price directly
-# in one call (no per-service pricing needed), and their rate limit
-# (60/min) is generous enough that this light caching is just good
-# manners rather than a rate-limit necessity -- a few minutes' cache
-# avoids hitting BloomSMS on every single page load if many customers
-# browse the page around the same time.
-_bloom_cache = {"data": None, "fetched_at": 0.0}
+# BLOOMSMS ADDITION. BloomSMS returns price and stock directly in one call
+# per country. Service lists differ by country, so the cache is keyed by
+# country id: {"187": {"data": [...], "fetched_at": 123.4}, ...}.
+# NOTE: BloomSMS's 60 requests/min limit is per API key, i.e. shared by
+# ALL your customers, so this cache is what keeps you under it.
+_bloom_cache: dict = {}
 _BLOOM_CACHE_TTL_SECONDS = 300  # 5 minutes
+
+# The country list barely changes, so cache it for an hour.
+_bloom_countries_cache = {"data": None, "fetched_at": 0.0}
+_BLOOM_COUNTRIES_TTL_SECONDS = 3600
 
 
 def _to_cents(value) -> int:
@@ -175,31 +182,61 @@ def list_fetchsms_services(current_user: models.User = Depends(get_current_user)
     ]
 
 
+@router.get("/bloomsms/countries")
+def list_bloomsms_countries(current_user: models.User = Depends(get_current_user)):
+    """
+    Returns [{"code": "187", "name": "United States"}, ...] -- the shape
+    the BloomSMSServices.jsx country picker expects. Requires the updated
+    bloomsms_client.py that includes list_countries().
+    """
+    now = time.time()
+    cache = _bloom_countries_cache
+    if cache["data"] is not None and (now - cache["fetched_at"]) < _BLOOM_COUNTRIES_TTL_SECONDS:
+        return cache["data"]
+
+    try:
+        data = bloom_list_countries()
+    except BloomSMSError as e:
+        logger.error("BloomSMS error while listing countries: %s", e.message)
+        if cache["data"] is not None:
+            return cache["data"]  # stale beats nothing
+        raise HTTPException(status_code=502, detail=f"BloomSMS error: {e.message}")
+
+    cache["data"] = data
+    cache["fetched_at"] = now
+    return data
+
+
 @router.get("/bloomsms", response_model=list[schemas.ServiceOut])
-def list_bloomsms_services(current_user: models.User = Depends(get_current_user)):
+def list_bloomsms_services(
+    country: str = "187",
+    current_user: models.User = Depends(get_current_user),
+):
     """
-    Bulk listing, like Getatext's -- BloomSMS returns price and stock
-    directly in one call, so there's no need for the search-driven
-    approach TextVerified needed. Lightly cached (5 min) purely to be
-    polite to their API under concurrent page loads, not because of any
-    rate-limit crisis like TextVerified's.
+    Services for ONE country (defaults to 187 / US, BloomSMS's own
+    default). Previously this ignored the `country` query param the
+    frontend sends and always returned US services from a single global
+    cache, so the country picker could never change anything.
     """
+    if not country.isdigit():
+        raise HTTPException(status_code=422, detail="Invalid country")
+
     fx_rate = get_usd_to_ngn_rate()
 
     now = time.time()
-    if _bloom_cache["data"] is not None and (now - _bloom_cache["fetched_at"]) < _BLOOM_CACHE_TTL_SECONDS:
-        rows = _bloom_cache["data"]
+    entry = _bloom_cache.get(country)
+    if entry is not None and (now - entry["fetched_at"]) < _BLOOM_CACHE_TTL_SECONDS:
+        rows = entry["data"]
     else:
         try:
-            rows = bloom_list_services()
-            _bloom_cache["data"] = rows
-            _bloom_cache["fetched_at"] = now
+            rows = bloom_list_services(country)
+            _bloom_cache[country] = {"data": rows, "fetched_at": now}
         except BloomSMSError as e:
-            logger.error("BloomSMS error while listing services: %s", e.message)
+            logger.error("BloomSMS error while listing services (country %s): %s", country, e.message)
             # Same graceful-degradation pattern as the other providers --
-            # serve a stale cache if we have one rather than erroring out.
-            if _bloom_cache["data"] is not None:
-                rows = _bloom_cache["data"]
+            # serve a stale cache for this country if we have one.
+            if entry is not None:
+                rows = entry["data"]
             else:
                 raise HTTPException(status_code=502, detail=f"BloomSMS error: {e.message}")
 

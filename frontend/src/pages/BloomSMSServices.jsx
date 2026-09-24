@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import api, { extractErrorMessage } from "../api";
 import { formatNaira } from "../utils/currency";
 
@@ -9,6 +9,7 @@ import { formatNaira } from "../utils/currency";
 const asArray = (v) => (Array.isArray(v) ? v : []);
 
 const DEFAULT_COUNTRY = "187"; // United States, BloomSMS's own default
+const TOP_COUNT = 5;
 
 export default function BloomSMSServices({ refreshUser }) {
   const [services, setServices] = useState([]);
@@ -22,6 +23,11 @@ export default function BloomSMSServices({ refreshUser }) {
   const [lastRented, setLastRented] = useState(null); // { number, service, activationId }
   const [smsCode, setSmsCode] = useState(null); // { code, full_text }
   const [waitingForCode, setWaitingForCode] = useState(false);
+
+  // Searchable country picker state
+  const [countryOpen, setCountryOpen] = useState(false);
+  const [countrySearch, setCountrySearch] = useState("");
+  const pickerRef = useRef(null);
 
   // Load countries once.
   useEffect(() => {
@@ -85,6 +91,31 @@ export default function BloomSMSServices({ refreshUser }) {
     };
   }, [selectedCountry, loadingCountries]);
 
+  // Close the country dropdown on outside click or Escape.
+  useEffect(() => {
+    if (!countryOpen) return;
+
+    function onMouseDown(e) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) {
+        setCountryOpen(false);
+        setCountrySearch("");
+      }
+    }
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        setCountryOpen(false);
+        setCountrySearch("");
+      }
+    }
+
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [countryOpen]);
+
   // Poll our own backend (not BloomSMS directly) for the SMS code, every
   // 3s, up to 3 minutes. Stops when a code shows up or on unmount.
   useEffect(() => {
@@ -127,6 +158,13 @@ export default function BloomSMSServices({ refreshUser }) {
     };
   }, [lastRented?.activationId]);
 
+  function chooseCountry(code) {
+    setSelectedCountry(code);
+    setCountryOpen(false);
+    setCountrySearch("");
+    setSearch(""); // start fresh in the new country
+  }
+
   async function handleRent(service) {
     if (rentingService) return; // one rental at a time -- this spends money
     setRentingService(service.api_name);
@@ -160,9 +198,56 @@ export default function BloomSMSServices({ refreshUser }) {
     }
   }
 
-  const query = search.toLowerCase();
+  const selectedCountryName =
+    countries.find((c) => c.code === selectedCountry)?.name || "";
+
+  const countryQuery = countrySearch.trim().toLowerCase();
+  const matchingCountries = countries.filter((c) =>
+    c.name.toLowerCase().includes(countryQuery)
+  );
+
+  const query = search.trim().toLowerCase();
   const filtered = services.filter((s) =>
     (s.display_name || "").toLowerCase().includes(query)
+  );
+
+  // BloomSMS exposes no popularity metric, so "top" = most numbers in stock
+  // for the selected country.
+  const topServices = [...services]
+    .filter((s) => s.stock > 0)
+    .sort((a, b) => b.stock - a.stock)
+    .slice(0, TOP_COUNT);
+
+  const showTop = !loading && !query && topServices.length > 0;
+
+  function renderRow(s, keyPrefix) {
+    return (
+      <tr key={`${keyPrefix}-${s.api_name}`}>
+        <td>{s.display_name}</td>
+        <td>{formatNaira(s.customer_price_naira)}</td>
+        <td>{s.stock > 0 ? s.stock : "Out of stock"}</td>
+        <td>
+          <button
+            className="btn"
+            disabled={s.stock <= 0 || rentingService !== null}
+            onClick={() => handleRent(s)}
+          >
+            {rentingService === s.api_name ? "Renting..." : "Rent"}
+          </button>
+        </td>
+      </tr>
+    );
+  }
+
+  const tableHead = (
+    <thead>
+      <tr>
+        <th>Service</th>
+        <th>Price</th>
+        <th>Stock</th>
+        <th></th>
+      </tr>
+    </thead>
   );
 
   return (
@@ -170,30 +255,98 @@ export default function BloomSMSServices({ refreshUser }) {
       <h2>Service 3</h2>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        {/* Searchable country picker: click, type to filter, Enter picks the first match */}
+        <div
+          className="form-group"
+          ref={pickerRef}
+          style={{ maxWidth: 240, flex: 1, position: "relative" }}
+        >
+          <input
+            role="combobox"
+            aria-expanded={countryOpen}
+            aria-autocomplete="list"
+            placeholder={
+              loadingCountries
+                ? "Loading countries..."
+                : countryOpen
+                ? "Search countries..."
+                : "Select country"
+            }
+            value={countryOpen ? countrySearch : selectedCountryName}
+            disabled={loadingCountries || countries.length === 0}
+            onFocus={() => setCountryOpen(true)}
+            onClick={() => setCountryOpen(true)}
+            onChange={(e) => {
+              setCountrySearch(e.target.value);
+              setCountryOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && matchingCountries[0]) {
+                e.preventDefault();
+                chooseCountry(matchingCountries[0].code);
+              }
+            }}
+          />
+
+          {countryOpen && (
+            <ul
+              role="listbox"
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                zIndex: 20,
+                margin: "4px 0 0",
+                padding: 4,
+                listStyle: "none",
+                maxHeight: 240,
+                overflowY: "auto",
+                background: "var(--card-bg, #fff)",
+                border: "1px solid var(--border, #e5e7eb)",
+                borderRadius: 8,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+              }}
+            >
+              {matchingCountries.length === 0 && (
+                <li style={{ padding: "8px 10px", color: "var(--text-dim)" }}>
+                  No matching countries
+                </li>
+              )}
+              {matchingCountries.map((c) => (
+                <li
+                  key={c.code}
+                  role="option"
+                  aria-selected={c.code === selectedCountry}
+                  onClick={() => chooseCountry(c.code)}
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    fontWeight: c.code === selectedCountry ? 600 : 400,
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = "rgba(127,127,127,0.12)")
+                  }
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                >
+                  {c.name}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         <div className="form-group" style={{ maxWidth: 320, flex: 1 }}>
           <input
-            placeholder="Search services..."
+            placeholder={
+              selectedCountryName
+                ? `Search services in ${selectedCountryName}...`
+                : "Search services..."
+            }
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-        </div>
-
-        <div className="form-group" style={{ maxWidth: 220 }}>
-          <select
-            value={selectedCountry}
-            onChange={(e) => setSelectedCountry(e.target.value)}
-            disabled={loadingCountries || countries.length === 0}
-          >
-            {loadingCountries && <option value="">Loading countries...</option>}
-            {!loadingCountries && countries.length === 0 && (
-              <option value="">No countries available</option>
-            )}
-            {countries.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.name}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 
@@ -226,45 +379,42 @@ export default function BloomSMSServices({ refreshUser }) {
         </div>
       )}
 
+      {showTop && (
+        <div className="card">
+          <h3 style={{ margin: "0 0 4px" }}>
+            Top {topServices.length}
+            {selectedCountryName ? ` in ${selectedCountryName}` : ""}
+          </h3>
+          <div style={{ color: "var(--text-dim)", fontSize: 13, marginBottom: 8 }}>
+            Most numbers in stock right now
+          </div>
+          <table>
+            {tableHead}
+            <tbody>{topServices.map((s) => renderRow(s, "top"))}</tbody>
+          </table>
+        </div>
+      )}
+
       <div className="card">
         {loading ? (
           <div>Loading services...</div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Service</th>
-                <th>Price</th>
-                <th>Stock</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((s) => (
-                <tr key={s.api_name}>
-                  <td>{s.display_name}</td>
-                  <td>{formatNaira(s.customer_price_naira)}</td>
-                  <td>{s.stock > 0 ? s.stock : "Out of stock"}</td>
-                  <td>
-                    <button
-                      className="btn"
-                      disabled={s.stock <= 0 || rentingService !== null}
-                      onClick={() => handleRent(s)}
-                    >
-                      {rentingService === s.api_name ? "Renting..." : "Rent"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={4} style={{ color: "var(--text-dim)" }}>
-                    No services found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          <>
+            {showTop && <h3 style={{ margin: "0 0 8px" }}>All services</h3>}
+            <table>
+              {tableHead}
+              <tbody>
+                {filtered.map((s) => renderRow(s, "all"))}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ color: "var(--text-dim)" }}>
+                      No services found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </>
         )}
       </div>
     </div>

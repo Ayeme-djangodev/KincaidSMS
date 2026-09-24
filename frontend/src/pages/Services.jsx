@@ -42,7 +42,7 @@ export default function Services({ refreshUser }) {
     }
   }
 
-  const DEFAULT_VISIBLE_COUNT = 15;
+  const DEFAULT_VISIBLE_COUNT = 5;
 
   // Until the user searches, show only a short default list instead of
   // the entire catalog (Getatext alone returns 1000+ rows). No

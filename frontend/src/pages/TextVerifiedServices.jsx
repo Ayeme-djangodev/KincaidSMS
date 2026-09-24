@@ -3,14 +3,8 @@ import api, { extractErrorMessage } from "../api";
 import { formatNaira } from "../utils/currency";
 
 // FETCH SMS INTEGRATION (previously TextVerified -- swapped 2026-09).
-// This used to be search-driven (debounced, one network call per query)
-// because TextVerified's own API didn't return price in bulk. Fetch SMS's
-// GET /services/fetchsms DOES return the full catalog with price in one
-// call -- same as Services.jsx's Getatext pattern -- so this is now a
-// single fetch-on-mount plus client-side filtering, identical in shape
-// to Services.jsx. No network call happens while typing, so there's
-// nothing here that can 404/error mid-keystroke the way the old
-// search endpoint did.
+// Fetch on mount, filter/slice client-side -- same pattern as
+// Services.jsx. No network call happens while typing.
 
 export default function TextVerifiedServices({ refreshUser }) {
   const [services, setServices] = useState([]);
@@ -44,8 +38,6 @@ export default function TextVerifiedServices({ refreshUser }) {
       await refreshUser();
       setRentingService(null);
       setError("");
-      // Keep the simple success indicator the old page had, without a
-      // dedicated verifications history page yet.
       window.alert(`Rented ${service.display_name} — number: ${res.data.number}`);
     } catch (err) {
       setError(extractErrorMessage(err));
@@ -53,9 +45,15 @@ export default function TextVerifiedServices({ refreshUser }) {
     }
   }
 
-  const filtered = services.filter((s) =>
-    s.display_name.toLowerCase().includes(search.toLowerCase())
-  );
+  const DEFAULT_VISIBLE_COUNT = 5;
+
+  // Same default-short-list behavior as Services.jsx: until the user
+  // searches, show only the top N by stock instead of the whole catalog.
+  const filtered = search.trim()
+    ? services.filter((s) =>
+        s.display_name.toLowerCase().includes(search.toLowerCase())
+      )
+    : [...services].sort((a, b) => b.stock - a.stock).slice(0, DEFAULT_VISIBLE_COUNT);
 
   return (
     <div className="container">
@@ -68,6 +66,12 @@ export default function TextVerifiedServices({ refreshUser }) {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+
+      {!search.trim() && (
+        <p style={{ color: "var(--text-dim)", fontSize: 13, marginTop: -8, marginBottom: 16 }}>
+          Showing popular services — search to find a specific one.
+        </p>
+      )}
 
       {error && <div className="error-text">{error}</div>}
 
@@ -104,7 +108,7 @@ export default function TextVerifiedServices({ refreshUser }) {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={4} style={{ color: "var(--text-dim)" }}>
-                    No services found.
+                    {search.trim() ? "No services found." : "No services available."}
                   </td>
                 </tr>
               )}

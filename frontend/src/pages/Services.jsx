@@ -42,9 +42,19 @@ export default function Services({ refreshUser }) {
     }
   }
 
-  const filtered = services.filter((s) =>
-    s.display_name.toLowerCase().includes(search.toLowerCase())
-  );
+  const DEFAULT_VISIBLE_COUNT = 15;
+
+  // Until the user searches, show only a short default list instead of
+  // the entire catalog (Getatext alone returns 1000+ rows). No
+  // "popularity" data actually exists from the API, so stock count is
+  // used as the closest available proxy -- highest-stock services sort
+  // first, which in practice tends to surface well-known, high-volume
+  // services like WhatsApp/Google over obscure long-tail ones.
+  const filtered = search.trim()
+    ? services.filter((s) =>
+        s.display_name.toLowerCase().includes(search.toLowerCase())
+      )
+    : [...services].sort((a, b) => b.stock - a.stock).slice(0, DEFAULT_VISIBLE_COUNT);
 
   return (
     <div className="container">
@@ -57,6 +67,12 @@ export default function Services({ refreshUser }) {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+
+      {!search.trim() && (
+        <p style={{ color: "var(--text-dim)", fontSize: 13, marginTop: -8, marginBottom: 16 }}>
+          Showing popular services — search to find a specific one.
+        </p>
+      )}
 
       {error && <div className="error-text">{error}</div>}
 
@@ -93,7 +109,7 @@ export default function Services({ refreshUser }) {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={4} style={{ color: "var(--text-dim)" }}>
-                    No services found.
+                    {search.trim() ? "No services found." : "No services available."}
                   </td>
                 </tr>
               )}

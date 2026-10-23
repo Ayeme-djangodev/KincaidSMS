@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import api from "../api";
 import { formatNaira } from "../utils/currency";
 import useTransactPayDeposit from "../hooks/useTransactPayDeposit.js";
+import useBalanceNaira from "../hooks/useBalanceNaira.js";
 
 const navItems = [
+  { to: "/buy", label: "Buy a number" },
   { to: "/dashboard", label: "Dashboard" },
   { to: "/rentals", label: "Rent History" },
   { to: "/wallet", label: "Transactions" },
@@ -14,7 +15,7 @@ export default function Sidebar({ user, refreshUser, onLogout, onNavigate }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [rate, setRate] = useState(null);
+  const balanceNaira = useBalanceNaira(user);
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [amount, setAmount] = useState("5000.00");
 
@@ -24,14 +25,6 @@ export default function Sidebar({ user, refreshUser, onLogout, onNavigate }) {
       setTopUpOpen(false);
     },
   });
-
-  useEffect(() => {
-    if (!user) return;
-    api
-      .get("/fx/rate")
-      .then((res) => setRate(res.data.usd_to_ngn))
-      .catch(() => setRate(null));
-  }, [user]);
 
   function handleLogout() {
     localStorage.removeItem("token");
@@ -46,10 +39,8 @@ export default function Sidebar({ user, refreshUser, onLogout, onNavigate }) {
 
   if (!user) return null;
 
-  const balanceNaira = rate ? (user.balance_cents / 100) * rate : null;
-
   return (
-    <div className="sidebar" style={{ width: 220, minHeight: "100vh", padding: 16, display: "flex", flexDirection: "column", gap: 4, borderRight: "1px solid var(--text-dim)" }}>
+    <div className="sidebar" style={{ width: 220, minHeight: "100vh", padding: 16, display: "flex", flexDirection: "column", gap: 4, borderRight: "1px solid var(--border)", background: "var(--surface)" }}>
       <Link to="/dashboard" className="brand" onClick={() => onNavigate?.()} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, textDecoration: "none" }}>
         <span
           style={{
@@ -57,7 +48,7 @@ export default function Sidebar({ user, refreshUser, onLogout, onNavigate }) {
             height: 26,
             borderRadius: 7,
             background: "var(--signal)",
-            color: "#1a0a03",
+            color: "var(--signal-ink)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -81,7 +72,7 @@ export default function Sidebar({ user, refreshUser, onLogout, onNavigate }) {
               borderRadius: 6,
               textDecoration: "none",
               background: location.pathname === item.to ? "var(--signal)" : "transparent",
-              color: location.pathname === item.to ? "#1a0a03" : "inherit",
+              color: location.pathname === item.to ? "var(--signal-ink)" : "inherit",
               fontWeight: location.pathname === item.to ? 600 : 400,
             }}
           >
@@ -97,7 +88,7 @@ export default function Sidebar({ user, refreshUser, onLogout, onNavigate }) {
               borderRadius: 6,
               textDecoration: "none",
               background: location.pathname === "/admin" ? "var(--signal)" : "transparent",
-              color: location.pathname === "/admin" ? "#1a0a03" : "inherit",
+              color: location.pathname === "/admin" ? "var(--signal-ink)" : "inherit",
               fontWeight: location.pathname === "/admin" ? 600 : 400,
             }}
           >

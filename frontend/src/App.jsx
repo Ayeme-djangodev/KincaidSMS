@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import api from "./api";
 import AppLayout from "./components/AppLayout.jsx";
 import PrivateRoute from "./components/PrivateRoute.jsx";
@@ -7,9 +7,7 @@ import Home from "./pages/Home.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
-import Services from "./pages/Services.jsx";
-import TextVerifiedServices from "./pages/TextVerifiedServices.jsx";
-import BloomSMSServices from "./pages/BloomSMSServices.jsx";
+import Buy from "./pages/Buy.jsx";
 import Rentals from "./pages/Rentals.jsx";
 import Wallet from "./pages/Wallet.jsx";
 import AdminPanel from "./pages/AdminPanel.jsx";
@@ -63,29 +61,18 @@ export default function App() {
         }
       />
       <Route
-        path="/services"
+        path="/buy"
         element={
           <PrivateRoute user={user} loading={loading}>
-            {withSidebar(<Services refreshUser={refreshUser} />)}
+            {withSidebar(<Buy refreshUser={refreshUser} />)}
           </PrivateRoute>
         }
       />
-      <Route
-        path="/services/textverified"
-        element={
-          <PrivateRoute user={user} loading={loading}>
-            {withSidebar(<TextVerifiedServices refreshUser={refreshUser} />)}
-          </PrivateRoute>
-        }
-      />
-      <Route
-        path="/services/bloomsms"
-        element={
-          <PrivateRoute user={user} loading={loading}>
-            {withSidebar(<BloomSMSServices refreshUser={refreshUser} />)}
-          </PrivateRoute>
-        }
-      />
+      {/* The three old per-provider pages were merged into /buy. Keep the
+          old URLs working for bookmarks. */}
+      <Route path="/services" element={<Navigate to="/buy" replace />} />
+      <Route path="/services/textverified" element={<Navigate to="/buy" replace />} />
+      <Route path="/services/bloomsms" element={<Navigate to="/buy" replace />} />
       <Route
         path="/rentals"
         element={

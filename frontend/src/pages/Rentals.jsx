@@ -177,7 +177,7 @@ export default function Rentals({ refreshUser }) {
             {items.length === 0 && (
               <tr>
                 <td colSpan={6} style={{ color: "var(--text-dim)" }}>
-                  No rentals yet. Head to a Services tab to rent a number.
+                  No rentals yet. Head to "Buy a number" to rent one.
                 </td>
               </tr>
             )}

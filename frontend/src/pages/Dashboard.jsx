@@ -2,9 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import api, { extractErrorMessage } from "../api";
 import { formatNaira } from "../utils/currency";
 import useIsMobile from "../hooks/useIsMobile.js";
-import Services from "./Services.jsx";
-import TextVerifiedServices from "./TextVerifiedServices.jsx";
-import BloomSMSServices from "./BloomSMSServices.jsx";
+import Buy from "./Buy.jsx";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -18,15 +16,8 @@ const PROVIDERS = [
   { key: "bloomsms", label: "Service 3", listPath: "/activations" },
 ];
 
-const TABS = [
-  { key: "getatext", label: "Service 1" },
-  { key: "textverified", label: "Service 2" },
-  { key: "bloomsms", label: "Service 3" },
-];
-
 export default function Dashboard({ user, refreshUser }) {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState("getatext");
   const [items, setItems] = useState([]); // combined across all 3 providers
   const [error, setError] = useState("");
   const [busyKey, setBusyKey] = useState(null); // `${provider}:${id}` currently being cancelled
@@ -118,7 +109,7 @@ export default function Dashboard({ user, refreshUser }) {
                 height: 32,
                 borderRadius: "50%",
                 background: "var(--signal)",
-                color: "#1a0a03",
+                color: "var(--signal-ink)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -135,29 +126,9 @@ export default function Dashboard({ user, refreshUser }) {
       {error && <div className="error-text">{error}</div>}
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
-        <div className="card" style={{ gridColumn: "1 / 2" }}>
-          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                className={activeTab === t.key ? "btn" : "btn secondary"}
-                onClick={() => setActiveTab(t.key)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-          {/*
-            Reusing the existing full page components as tab panels rather
-            than duplicating their fetch/rent/search logic a second time.
-            Each one still renders its own heading/spacing since they were
-            built as standalone pages -- functionally correct, just not
-            pixel-tight nesting. Worth revisiting if you want this tighter
-            visually.
-          */}
-          {activeTab === "getatext" && <Services refreshUser={refreshUser} />}
-          {activeTab === "textverified" && <TextVerifiedServices refreshUser={refreshUser} />}
-          {activeTab === "bloomsms" && <BloomSMSServices refreshUser={refreshUser} />}
+        <div style={{ gridColumn: "1 / 2" }}>
+          {/* One buy flow for every provider; see pages/Buy.jsx. */}
+          <Buy refreshUser={refreshUser} embedded />
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

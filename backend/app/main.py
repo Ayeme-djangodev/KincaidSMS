@@ -10,6 +10,7 @@ from app.config import settings
 from app.routers import auth, wallet, services, rentals, verifications, activations, admin
 from app.routers import fx
 from app.routers import bloomsms_webhooks
+from app.routers import offers
 
 # SCHEMA MANAGEMENT CHANGE: Base.metadata.create_all() used to run here on
 # every startup. That's removed now that Alembic owns the schema -- run
@@ -33,6 +34,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(wallet.router)
 app.include_router(services.router)
+app.include_router(offers.router)
 app.include_router(rentals.router)
 app.include_router(verifications.router)
 app.include_router(activations.router)

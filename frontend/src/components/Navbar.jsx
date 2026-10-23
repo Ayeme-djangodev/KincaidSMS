@@ -135,9 +135,7 @@ export default function Navbar({ user, onLogout }) {
             zIndex: 50,
           }}
         >
-          <Link to="/services" onClick={handleNavClick}>Service 1</Link>
-          <Link to="/services/textverified" onClick={handleNavClick}>Service 2</Link>
-          <Link to="/services/bloomsms" onClick={handleNavClick}>Service 3</Link>
+          <Link to="/buy" onClick={handleNavClick}>Buy a number</Link>
           <Link to="/rentals" onClick={handleNavClick}>My Rentals</Link>
           <Link to="/wallet" onClick={handleNavClick}>Wallet</Link>
         </nav>

@@ -23,7 +23,7 @@ export default function Login({ onLoggedIn }) {
       });
       localStorage.setItem("token", res.data.access_token);
       await onLoggedIn();
-      navigate("/dashboard");
+      navigate("/buy");
     } catch (err) {
       setError(extractErrorMessage(err));
     } finally {
@@ -41,24 +41,28 @@ export default function Login({ onLoggedIn }) {
         <p className="sub">Welcome back — your balance and rentals are waiting.</p>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Email</label>
+            <label htmlFor="login-email">Email</label>
             <input
+              id="login-email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>
           <div className="form-group">
-            <label>Password</label>
+            <label htmlFor="login-password">Password</label>
             <input
+              id="login-password"
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
           </div>
-          {error && <div className="error-text">{error}</div>}
+          {error && <div className="error-text" role="alert">{error}</div>}
           <button className="btn" type="submit" disabled={loading}>
             {loading ? "Signing in..." : "Sign in"}
           </button>

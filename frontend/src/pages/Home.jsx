@@ -33,8 +33,8 @@ const FEATURES = [
   },
   {
     icon: IconTag,
-    title: "Pay only for what you use",
-    body: "Prices are shown up front per service. Fund your balance once, spend it down as you rent.",
+    title: "The cheapest price, picked for you",
+    body: "We compare every available price for a service and pre-select the cheapest. Fund your balance once, spend it down as you rent.",
   },
   {
     icon: IconGlobe,

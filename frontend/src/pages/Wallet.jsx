@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api from "../api";
 import { formatNaira } from "../utils/currency";
 import useTransactPayDeposit from "../hooks/useTransactPayDeposit.js";
+import useIsMobile from "../hooks/useIsMobile.js";
 import {
   IconWallet,
   IconCheck,
@@ -19,7 +20,17 @@ import {
 // under the stat row instead of a separate card+form below it, matching
 // the screenshot's single combined card.
 
+const QUICK_AMOUNTS = [1000, 2000, 5000, 10000];
+
+const TYPE_LABELS = {
+  deposit: "Deposit",
+  rental_charge: "Purchase",
+  rental_refund: "Refund",
+  adjustment: "Adjustment",
+};
+
 export default function Wallet({ user, refreshUser }) {
+  const isMobile = useIsMobile();
   const [transactions, setTransactions] = useState([]);
   const [amount, setAmount] = useState("5000.00");
   const [rate, setRate] = useState(null);
@@ -67,7 +78,7 @@ export default function Wallet({ user, refreshUser }) {
 
   return (
     <div className="container">
-      <h2 style={{ marginBottom: 16 }}>Wallet</h2>
+      <h1 className="page-title">Wallet</h1>
 
       <div className="wallet-card">
         <div className="wallet-card-top">
@@ -115,10 +126,25 @@ export default function Wallet({ user, refreshUser }) {
           </button>
         ) : (
           <form onSubmit={handleDeposit}>
-            <div className="form-group" style={{ maxWidth: 200 }}>
-              <label>Amount (₦)</label>
+            <div className="chip-row" role="group" aria-label="Quick amounts">
+              {QUICK_AMOUNTS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className="chip"
+                  aria-pressed={parseFloat(amount) === n}
+                  onClick={() => setAmount(n.toFixed(2))}
+                >
+                  {formatNaira(n).replace(".00", "")}
+                </button>
+              ))}
+            </div>
+            <div className="form-group" style={{ maxWidth: 240 }}>
+              <label htmlFor="wallet-amount">Amount (₦)</label>
               <input
+                id="wallet-amount"
                 type="number"
+                inputMode="decimal"
                 min="1"
                 step="0.01"
                 value={amount}
@@ -126,9 +152,9 @@ export default function Wallet({ user, refreshUser }) {
                 autoFocus
               />
             </div>
-            {error && <div className="error-text">{error}</div>}
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn pill-cta" disabled={loading}>
+            {error && <div className="error-text" role="alert">{error}</div>}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className="btn pill-cta" style={{ flex: "1 1 200px", width: "auto" }} disabled={loading}>
                 {loading ? "Processing..." : "Continue to payment"}
               </button>
               <button
@@ -145,43 +171,67 @@ export default function Wallet({ user, refreshUser }) {
       </div>
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Transaction history</h3>
-        <div style={{ overflowX: "auto" }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Description</th>
-                <th>Amount</th>
-                <th>Balance after</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map((t) => (
-                <tr key={t.id}>
-                  <td>{new Date(t.created_at).toLocaleString()}</td>
-                  <td>{t.type}</td>
-                  <td>{t.description}</td>
-                  <td style={{ color: t.amount_cents >= 0 ? "var(--success)" : "var(--danger)" }}>
-                    {t.amount_cents >= 0 ? "+" : ""}
-                    {rate ? formatNaira((t.amount_cents / 100) * rate) : "..."}
-                  </td>
-                  <td>
-                    {rate ? formatNaira((t.balance_after_cents / 100) * rate) : "..."}
-                  </td>
-                </tr>
-              ))}
-              {transactions.length === 0 && (
+        <h2 style={{ marginTop: 0, fontSize: 18 }}>Transaction history</h2>
+
+        {transactions.length === 0 ? (
+          <div className="empty-state">No transactions yet.</div>
+        ) : isMobile ? (
+          <ul className="row-list">
+            {transactions.map((t) => {
+              const positive = t.amount_cents >= 0;
+              return (
+                <li key={t.id} className="row-card">
+                  <div className="row-card-top">
+                    <div>
+                      <div className="row-title">{TYPE_LABELS[t.type] || t.type}</div>
+                      {t.description && <div className="row-sub">{t.description}</div>}
+                    </div>
+                    <div className={`row-amount ${positive ? "pos" : "neg"}`}>
+                      {positive ? "+" : ""}
+                      {rate ? formatNaira((t.amount_cents / 100) * rate) : "..."}
+                    </div>
+                  </div>
+                  <div className="row-meta">
+                    <span>
+                      {new Date(t.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                    </span>
+                    <span>
+                      Balance {rate ? formatNaira((t.balance_after_cents / 100) * rate) : "..."}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={5} style={{ color: "var(--text-dim)" }}>
-                    No transactions yet.
-                  </td>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Description</th>
+                  <th>Amount</th>
+                  <th>Balance after</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {transactions.map((t) => (
+                  <tr key={t.id}>
+                    <td>{new Date(t.created_at).toLocaleString()}</td>
+                    <td>{TYPE_LABELS[t.type] || t.type}</td>
+                    <td>{t.description}</td>
+                    <td style={{ color: t.amount_cents >= 0 ? "var(--success)" : "var(--danger)" }}>
+                      {t.amount_cents >= 0 ? "+" : ""}
+                      {rate ? formatNaira((t.amount_cents / 100) * rate) : "..."}
+                    </td>
+                    <td>{rate ? formatNaira((t.balance_after_cents / 100) * rate) : "..."}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -319,6 +319,7 @@
 
 /* Active order */
 .kb-order {
+  scroll-margin-top: 76px;
   border-radius: 18px;
   background: var(--kb-surface);
   border: 1px solid var(--kb-border);

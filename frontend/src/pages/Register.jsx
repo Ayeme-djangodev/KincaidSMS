@@ -36,25 +36,29 @@ export default function Register() {
         <p className="sub">No phone number required to sign up.</p>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Email</label>
+            <label htmlFor="reg-email">Email</label>
             <input
+              id="reg-email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>
           <div className="form-group">
-            <label>Password (min 8 characters)</label>
+            <label htmlFor="reg-password">Password (min 8 characters)</label>
             <input
+              id="reg-password"
               type="password"
+              autoComplete="new-password"
               minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
           </div>
-          {error && <div className="error-text">{error}</div>}
+          {error && <div className="error-text" role="alert">{error}</div>}
           {done && (
             <p style={{ color: "var(--cord)", fontSize: 13, marginBottom: 10 }}>
               Account created — redirecting to sign in...

@@ -30,6 +30,9 @@
 
   --danger: #ff7a8a;
   --warn: #ffb547;
+  /* Was referenced by Wallet.jsx but never defined, so credits showed in
+     the default text color. Defined now. */
+  --success: #3ddc97;
 
   --radius-sm: 8px;
   --radius: 12px;
@@ -1097,3 +1100,188 @@ th {
   margin-bottom: 20px;
 }
 .auth-back:hover { color: var(--text); }
+
+/* ==========================================================================
+   REDESIGN POLISH: shared pieces used by Wallet, Rent History, Dashboard
+   and the auth pages. Phones get card lists instead of wide tables (the
+   pages switch with useIsMobile); inputs are 48px tall with a 16px font so
+   iOS doesn't zoom the page when one is focused.
+   ========================================================================== */
+
+.app-main .container {
+  padding: 28px 28px 48px;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 800;
+  margin: 0 0 16px;
+}
+
+.form-group input,
+.form-group select {
+  min-height: 48px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: 16px;
+}
+.form-group label {
+  font-weight: 600;
+}
+
+.btn {
+  min-height: 44px;
+}
+
+/* Row cards (mobile replacement for table rows) */
+
+.row-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.row-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+.row-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.row-title {
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.row-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.row-amount {
+  font-size: 15px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.row-amount.pos { color: var(--success); }
+.row-amount.neg { color: var(--danger); }
+.row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.row-number {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.row-code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--ink);
+  border-radius: var(--radius-sm);
+}
+.row-code .code-pill {
+  font-size: 20px;
+  letter-spacing: 0.1em;
+  background: none;
+  padding: 0;
+}
+.row-waiting {
+  font-size: 13px;
+  color: var(--warn);
+}
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.row-actions .btn {
+  flex: 1 1 120px;
+}
+.empty-state {
+  padding: 8px 0;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.copy-btn {
+  min-height: 44px;
+  min-width: 64px;
+  padding: 0 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.copy-btn:hover { border-color: var(--signal); color: var(--signal); }
+
+/* Quick amount chips (wallet top-up) */
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.chip {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chip[aria-pressed="true"] {
+  border-color: var(--signal);
+  background: rgba(61,220,151,0.14);
+  color: var(--signal);
+}
+
+/* Wallet card on narrow screens: stats stack two-up */
+@media (max-width: 560px) {
+  .wallet-card { padding: 18px; }
+  .wallet-balance-figure { font-size: 26px; }
+  .wallet-stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+}
+
+/* Auth pages */
+.auth-card { padding: 32px 24px; }
+@media (min-width: 480px) { .auth-card { padding: 36px 32px; } }
+.auth-card .btn { min-height: 48px; font-size: 15px; }
+
+/* Auth page links: bigger tap targets */
+.auth-back,
+.auth-foot a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.auth-foot a { padding: 0 4px; }

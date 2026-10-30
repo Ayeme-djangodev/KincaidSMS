@@ -130,7 +130,7 @@
 }
 
 .shell-main .container {
-  padding: 0 16px;
+  padding: 16px 16px 24px;
 }
 
 /* The Buy page normally fills the screen on its own; inside the shell the
@@ -174,3 +174,14 @@
   color: var(--signal);
   font-weight: 700;
 }
+
+/* Keep the main action in reach on long pages: the buy button sticks just
+   above the tab bar until the page scrolls to its natural spot. */
+.shell-main .kb-cta {
+  position: sticky;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  z-index: 5;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.shell-brand { min-height: 44px; }

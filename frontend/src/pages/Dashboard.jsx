@@ -3,6 +3,7 @@ import api, { extractErrorMessage } from "../api";
 import { formatNaira } from "../utils/currency";
 import useIsMobile from "../hooks/useIsMobile.js";
 import Buy from "./Buy.jsx";
+import CopyButton from "../components/CopyButton.jsx";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -96,132 +97,160 @@ export default function Dashboard({ user, refreshUser }) {
 
   const initials = user?.email ? user.email.slice(0, 2).toUpperCase() : "?";
 
-  return (
-    <div style={{ padding: isMobile ? 12 : 20 }}>
-      {!isMobile && (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h2 style={{ margin: 0 }}>Dashboard</h2>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ color: "var(--text-dim)", fontSize: 13 }}>{user?.email}</span>
-            <span
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                background: "var(--signal)",
-                color: "var(--signal-ink)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 12,
-                fontWeight: 700,
-              }}
-            >
-              {initials}
-            </span>
-          </div>
+  const activeSection = (
+    <div className="card">
+      <h2 style={{ marginTop: 0, fontSize: 18 }}>Active numbers</h2>
+      <p style={{ color: "var(--text-dim)", fontSize: 13, margin: "4px 0 14px" }}>
+        {active.length} active. Codes appear automatically, no need to refresh.
+      </p>
+
+      {active.length === 0 ? (
+        <div className="empty-state">No active numbers right now.</div>
+      ) : (
+        <ul className="row-list">
+          {active.map((it) => {
+            const key = `${it._provider}:${it.id}`;
+            return (
+              <li key={key} className="row-card">
+                <div className="row-card-top">
+                  <div>
+                    <div className="row-title">{it.service_display_name || it.service_api_name}</div>
+                    <div className="row-sub">{it._label}</div>
+                  </div>
+                  <span className="row-amount">{formatNaira(it.charged_naira)}</span>
+                </div>
+                <div className="row-meta">
+                  <span className="row-number">{it.number}</span>
+                  {it.number && <CopyButton text={it.number} label="Copy number" />}
+                </div>
+                {it.code ? (
+                  <div className="row-code">
+                    <span className="code-pill">{it.code}</span>
+                    <CopyButton text={it.code} label="Copy code" />
+                  </div>
+                ) : (
+                  <div className="row-waiting">Waiting for code...</div>
+                )}
+                <div className="row-actions">
+                  <button
+                    className="btn danger"
+                    disabled={busyKey === key}
+                    onClick={() => handleCancel(it)}
+                  >
+                    {busyKey === key ? "Cancelling..." : "Cancel and refund"}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+
+  const recentSection = (
+    <div className="card">
+      <h2 style={{ marginTop: 0, fontSize: 18 }}>Latest 10 numbers</h2>
+
+      {recent.length === 0 ? (
+        <div className="empty-state">No rentals yet.</div>
+      ) : isMobile ? (
+        <ul className="row-list">
+          {recent.map((it) => (
+            <li key={`${it._provider}:${it.id}`} className="row-card">
+              <div className="row-card-top">
+                <div>
+                  <div className="row-title">{it.service_display_name || it.service_api_name}</div>
+                  <div className="row-sub">{it._label}</div>
+                </div>
+                <span className={`badge ${it.status}`}>{it.status}</span>
+              </div>
+              <div className="row-meta">
+                <span className="row-number">{it.number}</span>
+                <span>{formatNaira(it.charged_naira)}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Number</th>
+                <th>Status</th>
+                <th>Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recent.map((it) => (
+                <tr key={`${it._provider}:${it.id}`}>
+                  <td>
+                    {it._label} — {it.service_display_name || it.service_api_name}
+                  </td>
+                  <td>{it.number}</td>
+                  <td>
+                    <span className={`badge ${it.status}`}>{it.status}</span>
+                  </td>
+                  <td>{formatNaira(it.charged_naira)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
+    </div>
+  );
 
-      {error && <div className="error-text">{error}</div>}
+  // Phones: the bottom "Buy" tab already leads to the buy page, so the
+  // Active tab just shows active numbers and recent history.
+  if (isMobile) {
+    return (
+      <div className="container">
+        <h1 className="page-title">Active</h1>
+        {error && <div className="error-text" role="alert">{error}</div>}
+        {activeSection}
+        {recentSection}
+      </div>
+    );
+  }
 
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
-        <div style={{ gridColumn: "1 / 2" }}>
-          {/* One buy flow for every provider; see pages/Buy.jsx. */}
-          <Buy refreshUser={refreshUser} embedded />
+  return (
+    <div style={{ padding: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h1 className="page-title" style={{ margin: 0 }}>Dashboard</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ color: "var(--text-dim)", fontSize: 13 }}>{user?.email}</span>
+          <span
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              background: "var(--signal)",
+              color: "var(--signal-ink)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
+            {initials}
+          </span>
         </div>
+      </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div className="card">
-            <h3 style={{ marginTop: 0 }}>Active Numbers</h3>
-            <p style={{ color: "var(--text-dim)", fontSize: 13, marginTop: -8 }}>
-              {active.length} active — no need to refresh, codes appear automatically.
-            </p>
-            <div style={{ overflowX: "auto" }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Service</th>
-                  <th>Number</th>
-                  <th>Code</th>
-                  <th>Cost</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {active.map((it) => (
-                  <tr key={`${it._provider}:${it.id}`}>
-                    <td>
-                      {it._label} — {it.service_display_name || it.service_api_name}
-                    </td>
-                    <td>{it.number}</td>
-                    <td>
-                      {it.code ? (
-                        <span className="code-pill">{it.code}</span>
-                      ) : (
-                        <span style={{ color: "var(--text-dim)" }}>waiting...</span>
-                      )}
-                    </td>
-                    <td>{formatNaira(it.charged_naira)}</td>
-                    <td>
-                      <button
-                        className="btn danger"
-                        disabled={busyKey === `${it._provider}:${it.id}`}
-                        onClick={() => handleCancel(it)}
-                      >
-                        Cancel
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {active.length === 0 && (
-                  <tr>
-                    <td colSpan={5} style={{ color: "var(--text-dim)" }}>
-                      No active numbers right now.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-            </div>
-          </div>
+      {error && <div className="error-text" role="alert">{error}</div>}
 
-          <div className="card">
-            <h3 style={{ marginTop: 0 }}>Latest 10 Numbers</h3>
-            <div style={{ overflowX: "auto" }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Service</th>
-                  <th>Number</th>
-                  <th>Status</th>
-                  <th>Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map((it) => (
-                  <tr key={`${it._provider}:${it.id}`}>
-                    <td>
-                      {it._label} — {it.service_display_name || it.service_api_name}
-                    </td>
-                    <td>{it.number}</td>
-                    <td>
-                      <span className={`badge ${it.status}`}>{it.status}</span>
-                    </td>
-                    <td>{formatNaira(it.charged_naira)}</td>
-                  </tr>
-                ))}
-                {recent.length === 0 && (
-                  <tr>
-                    <td colSpan={4} style={{ color: "var(--text-dim)" }}>
-                      No rentals yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-            </div>
-          </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
+        <div>
+          {/* One buy flow for every provider; see pages/Buy.jsx. */}
+          <Buy refreshUser={refreshUser} embedded onRented={loadAll} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {activeSection}
+          {recentSection}
         </div>
       </div>
     </div>

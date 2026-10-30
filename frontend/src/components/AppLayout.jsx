@@ -96,7 +96,7 @@ export default function AppLayout({ user, refreshUser, onLogout, children }) {
       <div style={{ minHeight: "100vh" }}>
         <div style={{ display: "flex" }}>
           <Sidebar user={user} refreshUser={refreshUser} onLogout={onLogout} />
-          <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+          <div className="app-main" style={{ flex: 1, minWidth: 0 }}>{children}</div>
         </div>
       </div>
     );

@@ -68,7 +68,7 @@ export default function Sidebar({ user, refreshUser, onLogout, onNavigate }) {
             to={item.to}
             onClick={() => onNavigate?.()}
             style={{
-              padding: "8px 10px",
+              padding: "10px 12px",
               borderRadius: 6,
               textDecoration: "none",
               background: location.pathname === item.to ? "var(--signal)" : "transparent",
@@ -84,7 +84,7 @@ export default function Sidebar({ user, refreshUser, onLogout, onNavigate }) {
             to="/admin"
             onClick={() => onNavigate?.()}
             style={{
-              padding: "8px 10px",
+              padding: "10px 12px",
               borderRadius: 6,
               textDecoration: "none",
               background: location.pathname === "/admin" ? "var(--signal)" : "transparent",

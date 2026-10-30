@@ -6,11 +6,10 @@
 export function formatNaira(amount) {
   const n = Number(amount);
   if (Number.isNaN(n)) return "₦0.00";
-  return (
-    "₦" +
-    n.toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
+  const body = Math.abs(n).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  // Sign goes in front of the symbol: -₦1,360.00 (not ₦-1,360.00).
+  return (n < 0 ? "-" : "") + "₦" + body;
 }

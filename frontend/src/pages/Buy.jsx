@@ -62,7 +62,7 @@ function CopyButton({ text, label }) {
   );
 }
 
-export default function Buy({ refreshUser, embedded = false }) {
+export default function Buy({ refreshUser, embedded = false, onRented }) {
   const [country, setCountry] = useState(DEFAULT_COUNTRY);
   const [countries, setCountries] = useState([]);
   const [search, setSearch] = useState("");
@@ -80,6 +80,7 @@ export default function Buy({ refreshUser, embedded = false }) {
   const [order, setOrder] = useState(null);
   // order: { route, id, number, code, status, serviceName, timedOut }
   const [cancelling, setCancelling] = useState(false);
+  const orderRef = useRef(null);
 
   // Countries (only matter for the offers that are tied to a country).
   useEffect(() => {
@@ -160,6 +161,15 @@ export default function Buy({ refreshUser, embedded = false }) {
     setOfferIdx(0);
   }
 
+  // After renting, bring the new order card into view: on a phone it sits
+  // below the buy button, off screen.
+  const orderId = order?.id;
+  useEffect(() => {
+    if (!orderId || !orderRef.current) return;
+    const calm = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    orderRef.current.scrollIntoView({ block: "start", behavior: calm ? "auto" : "smooth" });
+  }, [orderId]);
+
   // Poll the active order for its code.
   const pollRoute = order?.route;
   const pollId = order?.id;
@@ -220,6 +230,8 @@ export default function Buy({ refreshUser, embedded = false }) {
         serviceName: selected?.display_name || "",
         timedOut: false,
       });
+      // Let a host page (the Dashboard) reload its own lists right away.
+      if (typeof onRented === "function") onRented();
       try {
         if (typeof refreshUser === "function") await refreshUser();
       } catch {
@@ -230,7 +242,7 @@ export default function Buy({ refreshUser, embedded = false }) {
     } finally {
       setRenting(false);
     }
-  }, [offer, renting, country, selected, refreshUser]);
+  }, [offer, renting, country, selected, refreshUser, onRented]);
 
   async function handleCancel() {
     if (!order || cancelling) return;
@@ -373,7 +385,7 @@ export default function Buy({ refreshUser, embedded = false }) {
       </button>
 
       {order && (
-        <div className="kb-order" aria-live="polite">
+        <div className="kb-order" aria-live="polite" ref={orderRef}>
           <div className="kb-order-head">
             <h2 className="kb-order-title">{order.serviceName || "Your number"}</h2>
             <span className={`kb-status kb-status-${order.code ? "done" : order.status === "active" ? "wait" : "off"}`}>

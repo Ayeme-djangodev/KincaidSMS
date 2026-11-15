@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -16,6 +18,7 @@ from app.getatext_client import (
 )
 
 router = APIRouter(prefix="/rentals", tags=["rentals"])
+logger = logging.getLogger("uvicorn.error")
 
 MARKUP = settings.MARKUP_PERCENT
 
@@ -271,6 +274,7 @@ def poll_rental_status(
     try:
         data = rental_status(rental.getatext_id)
     except GetatextError as e:
+        logger.warning("Poll failed for rental %s (provider id %s): HTTP %s %s", rental.id, rental.getatext_id, e.status_code, e.message)
         raise HTTPException(status_code=e.status_code if e.status_code < 500 else 502, detail=e.message)
 
     rental.code = data.get("code") or rental.code

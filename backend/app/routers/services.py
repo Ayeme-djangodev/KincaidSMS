@@ -9,6 +9,12 @@ from app.deps import get_current_user
 from app.fx import get_usd_to_ngn_rate
 from app.getatext_client import prices_info, GetatextError
 from app.fetchsms_client import list_services as fetchsms_list_services, FetchSMSClientError
+from app.herosms_client import (
+    list_prices as hero_list_prices,
+    list_service_names as hero_list_service_names,
+    list_countries as hero_list_countries,
+    HeroSMSError,
+)
 from app.bloomsms_client import (
     list_services as bloom_list_services,
     list_countries as bloom_list_countries,
@@ -39,6 +45,14 @@ _BLOOM_CACHE_TTL_SECONDS = 300  # 5 minutes
 # The country list barely changes, so cache it for an hour.
 _bloom_countries_cache = {"data": None, "fetched_at": 0.0}
 _BLOOM_COUNTRIES_TTL_SECONDS = 3600
+
+# HEROSMS: same caching idea. One price call per country (5 min), plus the
+# service-name list and country list, which rarely change (1 hour).
+_hero_prices_cache: dict = {}
+_HERO_PRICES_TTL_SECONDS = 300
+_hero_names_cache = {"data": None, "fetched_at": 0.0}
+_hero_countries_cache = {"data": None, "fetched_at": 0.0}
+_HERO_STATIC_TTL_SECONDS = 3600
 
 
 def _to_cents(value) -> int:
@@ -255,6 +269,86 @@ def list_bloomsms_services(
                 api_name=code,
                 display_name=name,
                 base_cents=_to_cents(price),
+                fx_rate=fx_rate,
+                stock=int(row.get("stock") or 0),
+                multiple_sms=False,
+            )
+        )
+    return out
+
+
+def _hero_cached(cache: dict, ttl: int, fetch):
+    """Fetch with a TTL cache; on failure serve stale data if there is any."""
+    now = time.time()
+    if cache["data"] is not None and (now - cache["fetched_at"]) < ttl:
+        return cache["data"]
+    try:
+        data = fetch()
+    except HeroSMSError:
+        if cache["data"] is not None:
+            return cache["data"]
+        raise
+    cache["data"] = data
+    cache["fetched_at"] = now
+    return data
+
+
+@router.get("/herosms/countries")
+def list_herosms_countries(current_user: models.User = Depends(get_current_user)):
+    """[{"code": "187", "name": "USA"}, ...] for the country picker."""
+    try:
+        return _hero_cached(_hero_countries_cache, _HERO_STATIC_TTL_SECONDS, hero_list_countries)
+    except HeroSMSError as e:
+        raise HTTPException(status_code=502, detail=e.message)
+
+
+# Old path kept so a browser tab running the previous frontend keeps working.
+@router.get("/bloomsms/countries")
+def list_bloomsms_countries_legacy(current_user: models.User = Depends(get_current_user)):
+    return list_herosms_countries(current_user)
+
+
+@router.get("/herosms", response_model=list[schemas.ServiceOut])
+def list_herosms_services(
+    country: str = "187",
+    current_user: models.User = Depends(get_current_user),
+):
+    """Services for ONE country (187 = USA) with price and stock."""
+    if not country.isdigit():
+        raise HTTPException(status_code=422, detail="Invalid country")
+
+    fx_rate = get_usd_to_ngn_rate()
+
+    now = time.time()
+    entry = _hero_prices_cache.get(country)
+    if entry is not None and (now - entry["fetched_at"]) < _HERO_PRICES_TTL_SECONDS:
+        rows = entry["data"]
+    else:
+        try:
+            rows = hero_list_prices(country)
+            _hero_prices_cache[country] = {"data": rows, "fetched_at": now}
+        except HeroSMSError as e:
+            logger.error("HeroSMS error while listing prices (country %s): %s", country, e.message)
+            if entry is not None:
+                rows = entry["data"]
+            else:
+                raise HTTPException(status_code=502, detail=e.message)
+
+    # Names are cosmetic: if that call fails, fall back to the service code.
+    try:
+        names = _hero_cached(_hero_names_cache, _HERO_STATIC_TTL_SECONDS, hero_list_service_names)
+    except HeroSMSError:
+        names = {}
+
+    out = []
+    for row in rows:
+        code = row["code"]
+        out.append(
+            _build_service_out(
+                provider="herosms",
+                api_name=code,
+                display_name=names.get(code) or code.upper(),
+                base_cents=_to_cents(row["price"]),
                 fx_rate=fx_rate,
                 stock=int(row.get("stock") or 0),
                 multiple_sms=False,

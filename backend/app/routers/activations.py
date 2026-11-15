@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,7 @@ from app.bloomsms_client import (
 )
 
 router = APIRouter(prefix="/activations", tags=["activations"])
+logger = logging.getLogger("uvicorn.error")
 
 MARKUP = settings.MARKUP_PERCENT
 
@@ -188,10 +191,19 @@ def poll_activation_status(
     try:
         data = get_activation_status(a.bloomsms_id)
     except BloomSMSError as e:
+        logger.warning("Poll failed for activation %s (BloomSMS id %s): HTTP %s %s", a.id, a.bloomsms_id, e.status_code, e.message)
         raise HTTPException(status_code=e.status_code if e.status_code < 500 else 502, detail=e.message)
 
     sms = data.get("sms") or {}
     a.code = sms.get("code") or a.code
+    if not a.code and (data.get("activation_status") == "code_received" or sms):
+        # BloomSMS says an SMS arrived but we found no code in it: the
+        # response shape may differ from what this parser expects. Log
+        # the keys (not the message text) so it can be diagnosed.
+        logger.warning(
+            "Activation %s: SMS reported but no code parsed. status=%r data keys=%s sms keys=%s",
+            a.id, data.get("activation_status"), sorted(data.keys()), sorted(sms.keys()) if isinstance(sms, dict) else type(sms).__name__,
+        )
 
     bloom_status = data.get("activation_status")
     if bloom_status == "completed":

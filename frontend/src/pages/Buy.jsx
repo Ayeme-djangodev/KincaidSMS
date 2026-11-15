@@ -81,6 +81,7 @@ export default function Buy({ refreshUser, embedded = false, onRented }) {
   // order: { route, id, number, code, status, serviceName, timedOut }
   const [cancelling, setCancelling] = useState(false);
   const orderRef = useRef(null);
+  const [pollError, setPollError] = useState("");
 
   // Countries (only matter for the offers that are tied to a country).
   useEffect(() => {
@@ -180,20 +181,27 @@ export default function Buy({ refreshUser, embedded = false, onRented }) {
     let timer = null;
     const startedAt = Date.now();
     const base = ROUTES[pollRoute].base;
+    let failures = 0;
+    setPollError("");
 
     async function poll() {
       if (cancelled) return;
       try {
         const res = await api.get(`${base}/${pollId}/poll`);
         if (cancelled) return;
+        failures = 0;
+        setPollError("");
         const data = res.data || {};
         if (data.code || (data.status && data.status !== "active")) {
           setOrder((o) => (o && o.id === pollId ? { ...o, code: data.code || null, status: data.status || o.status } : o));
           if (data.code) return;
           if (data.status && data.status !== "active") return;
         }
-      } catch {
-        // A transient poll failure shouldn't end the loop.
+      } catch (err) {
+        // A transient poll failure shouldn't end the loop, but if it keeps
+        // failing the customer should see why instead of waiting silently.
+        failures += 1;
+        if (failures >= 3 && !cancelled) setPollError(extractErrorMessage(err));
       }
       if (Date.now() - startedAt >= POLL_TIMEOUT_MS) {
         setOrder((o) => (o && o.id === pollId ? { ...o, timedOut: true } : o));
@@ -410,7 +418,14 @@ export default function Buy({ refreshUser, embedded = false, onRented }) {
               <CopyButton text={order.code} label="Copy code" />
             </div>
           ) : waiting ? (
-            <div className="kb-muted">Waiting for the SMS. This updates by itself.</div>
+            pollError ? (
+              <div className="kb-notice" role="alert">
+                We are having trouble checking for your code ({pollError}). Still trying.
+                If this continues, check Rent History or contact support.
+              </div>
+            ) : (
+              <div className="kb-muted">Waiting for the SMS. This updates by itself.</div>
+            )
           ) : order.timedOut ? (
             <div className="kb-muted">No code yet. Check Rent History for updates.</div>
           ) : null}

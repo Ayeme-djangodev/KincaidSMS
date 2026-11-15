@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,7 @@ from app.fetchsms_client import (
 )
 
 router = APIRouter(prefix="/verifications", tags=["verifications"])
+logger = logging.getLogger("uvicorn.error")
 
 MARKUP = settings.MARKUP_PERCENT
 
@@ -186,6 +189,7 @@ def poll_verification_status(
     try:
         code = get_sms_code(v.fetchsms_id)
     except FetchSMSClientError as e:
+        logger.warning("Poll failed for verification %s (provider id %s): HTTP %s %s", v.id, v.fetchsms_id, e.status_code, e.message)
         raise HTTPException(status_code=e.status_code if e.status_code < 500 else 502, detail=e.message)
 
     if code:

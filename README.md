@@ -71,7 +71,8 @@ Set these in `backend/.env` locally, and as environment variables on Render in p
 | `CORS_ORIGINS` | Comma-separated allowed origins |
 | `GETATEXT_API_KEY` | Getatext SMS number provider |
 | `TEXTVERIFIED_API_KEY` / `TEXTVERIFIED_API_USERNAME` | TextVerified provider |
-| `BLOOMSMS_API_KEY` | BloomSMS provider |
+| `HEROSMS_API_KEY` | HeroSMS provider (current source for the third option) |
+| `BLOOMSMS_API_KEY` | BloomSMS (retiring; only needed while old BloomSMS rentals are still active) |
 | `TRANSACTPAY_PUBLIC_KEY` / `TRANSACTPAY_SECRET_KEY` / `TRANSACTPAY_ENCRYPTION_KEY` | Payment gateway |
 | `FX_CACHE_TTL_SECONDS` / `FX_FALLBACK_RATE_NGN` | FX conversion caching |
 

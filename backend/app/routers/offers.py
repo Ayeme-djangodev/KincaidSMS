@@ -30,13 +30,13 @@ router = APIRouter(prefix="/offers", tags=["offers"])
 
 logger = logging.getLogger("uvicorn.error")
 
-# BloomSMS's own default country id (United States).
+# Country id for the United States (same id scheme the s3 provider uses).
 US_COUNTRY = "187"
 
 # Routes whose numbers are US-only (Getatext and Fetch SMS sell US numbers,
 # which is why they take area codes / carriers rather than a country).
-# They are only offered when the customer has US selected. BloomSMS ("s3")
-# is the only provider that sells other countries. Edit this set if a
+# They are only offered when the customer has US selected. "s3" (now
+# HeroSMS) is the only provider that sells other countries. Edit this set if a
 # provider's coverage changes.
 US_ONLY_ROUTES = {"s1", "s2"}
 
@@ -106,7 +106,7 @@ def _collect(user: models.User, country: str) -> tuple[list[tuple[str, schemas.S
     if country == US_COUNTRY:
         sources.append(("s1", lambda: _getatext_rows(user)))
         sources.append(("s2", lambda: svc.list_fetchsms_services(current_user=user)))
-    sources.append(("s3", lambda: svc.list_bloomsms_services(country=country, current_user=user)))
+    sources.append(("s3", lambda: svc.list_herosms_services(country=country, current_user=user)))
 
     for route, fetch in sources:
         try:

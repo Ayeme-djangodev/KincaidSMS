@@ -87,7 +87,7 @@ export default function Buy({ refreshUser, embedded = false, onRented }) {
   useEffect(() => {
     let ignore = false;
     api
-      .get("/services/bloomsms/countries")
+      .get("/services/herosms/countries")
       .then((res) => {
         if (ignore) return;
         const list = asArray(res.data)

@@ -9,11 +9,12 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.fx import get_usd_to_ngn_rate, naira_to_usd_cents, usd_cents_to_naira
 from app.bloomsms_client import (
-    rent_activation,
     get_activation_status,
     update_activation_status,
     BloomSMSError,
 )
+from app import herosms_client as hero
+from app.herosms_client import HeroSMSError
 
 router = APIRouter(prefix="/activations", tags=["activations"])
 logger = logging.getLogger("uvicorn.error")
@@ -23,6 +24,25 @@ MARKUP = settings.MARKUP_PERCENT
 
 def _to_cents(value) -> int:
     return round(float(value) * 100)
+
+
+# New purchases come from HeroSMS. Their activation ids are stored in the
+# existing `bloomsms_id` column with this prefix, so no migration is needed
+# and rows bought from BloomSMS before the switch (no prefix) keep working:
+# poll / cancel / complete dispatch on the prefix.
+HERO_PREFIX = "hero:"
+
+
+def _is_hero(a: models.Activation) -> bool:
+    return bool(a.bloomsms_id and a.bloomsms_id.startswith(HERO_PREFIX))
+
+
+def _hero_id(a: models.Activation) -> str:
+    return a.bloomsms_id[len(HERO_PREFIX):]
+
+
+def _http_status(e) -> int:
+    return e.status_code if e.status_code < 500 else 502
 
 
 def _get_owned_activation(db: Session, activation_id: int, user: models.User) -> models.Activation:
@@ -88,40 +108,52 @@ def rent(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    customer_max_cents = _resolve_customer_max_cents(
-        payload.max_price_cents, payload.max_price_naira, current_user.balance_cents
+    # Never let the ceiling exceed what the customer can actually pay: the
+    # provider enforces max price, so this guarantees the final charge fits
+    # the balance (a number can't be cancelled in its first 2 minutes, so
+    # "buy, notice it is too expensive, cancel" is not an option).
+    customer_max_cents = min(
+        _resolve_customer_max_cents(
+            payload.max_price_cents, payload.max_price_naira, current_user.balance_cents
+        ),
+        current_user.balance_cents,
     )
     if customer_max_cents <= 0:
         raise HTTPException(status_code=400, detail="Insufficient balance")
 
-    # Same protective pattern as Getatext: convert the customer's
-    # post-markup ceiling down to a base-price ceiling and let BloomSMS
-    # itself refuse if the real cost would exceed it (their docs confirm
-    # max_price is accepted directly on the rent endpoint).
+    # Convert the customer's post-markup ceiling to a base-price ceiling and
+    # let the provider refuse if the real cost would exceed it.
     base_max_price = (customer_max_cents / (1 + MARKUP)) / 100
 
+    country = payload.country or "187"
     try:
-        data = rent_activation(
+        data = hero.get_number(
             service=payload.service,
-            country=payload.country,
-            max_price=round(base_max_price, 2),
+            country=country,
+            max_price=round(base_max_price, 4),
         )
-    except BloomSMSError as e:
-        raise HTTPException(status_code=e.status_code if e.status_code < 500 else 502, detail=e.message)
+    except HeroSMSError as e:
+        raise HTTPException(status_code=_http_status(e), detail=e.message)
 
     cost_cents = _to_cents(data["price"])
     charged_cents = round(cost_cents * (1 + MARKUP))
 
     if charged_cents > current_user.balance_cents:
+        # Should be unreachable because of the ceiling above. If it ever
+        # happens, try to hand the number back and say so loudly.
+        logger.error(
+            "Hero rent exceeded balance: user %s charged=%s balance=%s id=%s",
+            current_user.id, charged_cents, current_user.balance_cents, data["activation_id"],
+        )
         try:
-            update_activation_status(data["activation_id"], "cancel")
-        except BloomSMSError:
+            hero.set_status(data["activation_id"], 8)
+        except HeroSMSError:
             pass
         raise HTTPException(status_code=400, detail="Insufficient balance for the final price")
 
     activation = models.Activation(
         user_id=current_user.id,
-        bloomsms_id=str(data["activation_id"]),
+        bloomsms_id=f"{HERO_PREFIX}{data['activation_id']}",
         service_api_name=payload.service,
         service_display_name=payload.service,
         number=data.get("phone_number"),
@@ -188,6 +220,9 @@ def poll_activation_status(
         # webhook docs describe. No need to hit BloomSMS again.
         return _attach_naira(a)
 
+    if _is_hero(a):
+        return _poll_hero(db, a, current_user)
+
     try:
         data = get_activation_status(a.bloomsms_id)
     except BloomSMSError as e:
@@ -219,6 +254,32 @@ def poll_activation_status(
     return _attach_naira(a)
 
 
+def _poll_hero(db: Session, a: models.Activation, user: models.User):
+    try:
+        st = hero.get_status(_hero_id(a))
+    except HeroSMSError as e:
+        logger.warning("Poll failed for activation %s (HeroSMS id %s): %s %s", a.id, _hero_id(a), e.code, e.message)
+        raise HTTPException(status_code=_http_status(e), detail=e.message)
+
+    if st["state"] == "code_received":
+        if st["code"]:
+            a.code = st["code"]
+        else:
+            logger.warning("Activation %s: HeroSMS said STATUS_OK but sent no code", a.id)
+    elif st["state"] == "cancelled":
+        # Cancelled/expired on the provider's side without us asking (no SMS
+        # arrived in time). The provider refunds us, so refund the customer.
+        # Only runs on the active -> cancelled transition, so it cannot
+        # double-refund (poll returns early for non-active rows).
+        a.status = models.RentalStatus.cancelled
+        _refund_wallet(db, user, a.charged_cents, a.id, f"Refund for expired activation ({a.number})")
+
+    db.add(a)
+    db.commit()
+    db.refresh(a)
+    return _attach_naira(a)
+
+
 @router.post("/{activation_id}/cancel", response_model=schemas.ActivationOut)
 def cancel(
     activation_id: int,
@@ -228,6 +289,19 @@ def cancel(
     a = _get_owned_activation(db, activation_id, current_user)
     if a.status != models.RentalStatus.active:
         raise HTTPException(status_code=400, detail="Only active activations can be cancelled")
+
+    if _is_hero(a):
+        try:
+            hero.set_status(_hero_id(a), 8)
+        except HeroSMSError as e:
+            raise HTTPException(status_code=_http_status(e), detail=e.message)
+        # Refund only after the provider confirmed the cancel (ACCESS_CANCEL).
+        a.status = models.RentalStatus.cancelled
+        db.add(a)
+        _refund_wallet(db, current_user, a.charged_cents, a.id, f"Refund for cancelled activation ({a.number})")
+        db.commit()
+        db.refresh(a)
+        return _attach_naira(a)
 
     try:
         data = update_activation_status(a.bloomsms_id, "cancel")
@@ -276,10 +350,16 @@ def complete(
     if a.status != models.RentalStatus.active:
         raise HTTPException(status_code=400, detail="Only active activations can be completed")
 
-    try:
-        update_activation_status(a.bloomsms_id, "complete")
-    except BloomSMSError as e:
-        raise HTTPException(status_code=e.status_code if e.status_code < 500 else 502, detail=e.message)
+    if _is_hero(a):
+        try:
+            hero.set_status(_hero_id(a), 6)
+        except HeroSMSError as e:
+            raise HTTPException(status_code=_http_status(e), detail=e.message)
+    else:
+        try:
+            update_activation_status(a.bloomsms_id, "complete")
+        except BloomSMSError as e:
+            raise HTTPException(status_code=e.status_code if e.status_code < 500 else 502, detail=e.message)
 
     a.status = models.RentalStatus.completed
     db.add(a)

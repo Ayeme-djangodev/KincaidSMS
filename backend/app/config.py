@@ -18,8 +18,18 @@ class Settings(BaseSettings):
     # BLOOMSMS ADDITION.
     # Static Bearer token, no refresh needed (unlike TextVerified). Their
     # docs publish a rate limit of 60 requests/min per key.
-    BLOOMSMS_API_KEY: str
+    # Optional now: BloomSMS is being retired in favour of HeroSMS. Existing
+    # BloomSMS rentals still need it to poll/cancel until they have all
+    # finished; after that the variable can be removed.
+    BLOOMSMS_API_KEY: str = ""
     BLOOMSMS_BASE_URL: str = "https://bloomsms.com/api/v1"
+
+    # HEROSMS (replaces BloomSMS for new purchases). SMS-Activate-compatible
+    # endpoint; the key is sent as an api_key query parameter. Defaults to ""
+    # so a deploy without the key still boots (the option just shows as
+    # unavailable and the log says why).
+    HEROSMS_API_KEY: str = ""
+    HEROSMS_BASE_URL: str = "https://hero-sms.com/stubs/handler_api.php"
 
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
